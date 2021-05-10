@@ -51,7 +51,7 @@ impl DestinationAddr for IPv6Addr {
 
 impl DestinationAddr for DomainName {
     fn addr(&self) -> String {
-        return String::from("");
+        return String::from_utf8(Vec::from(self.domain_name)).unwrap();
     }
 }
 

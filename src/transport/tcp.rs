@@ -1,12 +1,12 @@
-use super::super::protocol::socks5::handler::{Handler};
+use super::super::protocol;
 
 pub async fn dispatch(socket: tokio::net::TcpStream) -> Result<(), String> {
+    // TODO: Should decide which protocol to use based on configs
+    let mut handler = protocol::socks5::handler::Handler::new(socket);
 
-    let mut handler = Handler::new(socket);
-
-    match handler.handle().await {
-        Ok(_) => return Ok(()),
-        Err(e) => return Err(e)
+    return match handler.handle().await {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e)
     }
 
     // let mut buf = [0; 1024];

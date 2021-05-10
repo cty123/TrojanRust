@@ -1,6 +1,5 @@
 use log::{info, warn};
 use tokio::net::TcpListener;
-// use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod transport;
 mod protocol;
@@ -8,7 +7,7 @@ mod protocol;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-    // Initalize configurations
+    // Initialize configurations
     env_logger::init();
     info!("Rust starting");
 

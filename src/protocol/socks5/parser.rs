@@ -59,7 +59,5 @@ pub fn parse(buf: &[u8]) -> Result<Request, String> {
 
     let request = Request::new(version, command, rsv, atype, dest_addr, dest_port);
 
-    debug!("Received socks5 request: {}", request.dump_request());
-
     return Ok(request);
 }
