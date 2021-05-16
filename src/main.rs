@@ -1,23 +1,37 @@
 use log::{info, warn};
 use tokio::net::TcpListener;
+use rustls::internal::pemfile::{certs, rsa_private_keys, pkcs8_private_keys};
+use std::io::BufReader;
+use std::fs::File;
+use std::io;
+use rustls::{NoClientAuth, ServerConfig, Certificate, PrivateKey};
+use tokio_rustls::TlsAcceptor;
+use std::sync::Arc;
 
 mod transport;
 mod protocol;
+mod config;
+mod application;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize configurations
     env_logger::init();
-    info!("Rust starting");
+    info!("Starting Rust-proxy at 127.0.0.1:8080");
 
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
 
+    // TLS
+    let config = setup_certificate("./cert/test.crt", "./cert/test.key").unwrap();
+    let acceptor = TlsAcceptor::from(Arc::new(config));
+
     loop {
         let (socket, _) = listener.accept().await?;
+        let acceptor = acceptor.clone();
 
         tokio::spawn(async move {
-            match transport::tcp::dispatch(socket).await {
+            match transport::tcp::dispatch(socket, acceptor, "socks5").await {
                 Ok(_) => {
                     info!("Finished processing socket");
                 },
@@ -27,4 +41,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
     }
+}
+
+fn setup_certificate(cert_path: &str, key_path: &str) -> Result<ServerConfig, String> {
+    let certs = load_certs(cert_path).unwrap();
+    let mut keys = load_keys(key_path).unwrap();
+
+    let mut config = ServerConfig::new(NoClientAuth::new());
+    config.set_single_cert(certs, keys.remove(0))
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))
+        .unwrap();
+
+    Ok(config)
+}
+
+fn load_certs(path: &str) -> io::Result<Vec<Certificate>> {
+    certs(&mut BufReader::new(File::open(path)?))
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
+}
+
+fn load_keys(path: &str) -> io::Result<Vec<PrivateKey>> {
+    pkcs8_private_keys(&mut BufReader::new(File::open(path)?))
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
 }

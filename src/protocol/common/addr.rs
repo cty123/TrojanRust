@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use crate::protocol::socks5::base::AType::DOMAINNAME;
 
 pub trait DestinationAddr {
     fn addr(&self) -> String;
@@ -58,9 +59,10 @@ impl DestinationAddr for DomainName {
 impl IPv4Addr {
     pub fn new(buf: &[u8], ptr: usize) -> String {
         return IPv4Addr {
-            ip_addr: buf[ptr..ptr + 4].try_into().expect("Incorrect IPv4 format"),
-        }
-        .addr();
+            ip_addr: buf[ptr..ptr + 4]
+                .try_into()
+                .expect("Incorrect IPv4 format"),
+        }.addr();
     }
 }
 
@@ -70,7 +72,16 @@ impl IPv6Addr {
             ip_addr: buf[ptr..ptr + 16]
                 .try_into()
                 .expect("Incorrect IPv6 format"),
-        }
-        .addr();
+        }.addr();
+    }
+}
+
+impl DomainName {
+    pub fn new(buf: &[u8], ptr: usize) -> String {
+        return DomainName {
+            domain_name: buf[ptr..ptr + 256]
+                .try_into()
+                .expect("Incorrect DomainName format")
+        }.addr();
     }
 }

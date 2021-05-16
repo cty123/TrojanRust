@@ -1,5 +1,5 @@
 [package]
-name = "rust-proc"
+name = "rust-proxy"
 version = "0.1.0"
 authors = ["ctydw"]
 edition = "2018"
@@ -12,4 +12,8 @@ env_logger = "0.8.3"
 tokio = { version = "1.5.0", features = ["full"] }
 tokio-util = { version = "0.6.6", features = ["full"] }
 tokio-stream = { version = "0.1.5" }
+tokio-rustls = "0.22.0"
 futures = { version = "0.3.14", features = ["thread-pool"]}
+serde_json = { version = "1.0" }
+rustls = { version = "0.19.1" }
+async-trait = "0.1.50"

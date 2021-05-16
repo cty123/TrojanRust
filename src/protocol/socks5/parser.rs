@@ -2,6 +2,9 @@ use log::debug;
 
 use super::super::common::addr::{IPv4Addr, IPv6Addr};
 use super::base::{AType, Command, Request};
+use crate::protocol::common::addr::DomainName;
+use std::io::{Error, ErrorKind};
+use std::io::Result;
 
 macro_rules! march {
     ($ptr:ident, $i:expr) => {
@@ -9,12 +12,12 @@ macro_rules! march {
     };
 }
 
-pub fn parse(buf: &[u8]) -> Result<Request, String> {
+pub fn parse(buf: &[u8]) -> Result<Request> {
     let mut ptr = 0;
 
     let version = match buf[ptr] {
         5 => 0x5,
-        _ => return Err(String::from("aaa")),
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse request data")),
     };
 
     march!(ptr, 1);
@@ -23,7 +26,7 @@ pub fn parse(buf: &[u8]) -> Result<Request, String> {
         1 => Command::CONNECT,
         2 => Command::BIND,
         3 => Command::UDPASSOCIATE,
-        _ => return Err(String::from("bbb")),
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse request data")),
     };
 
     march!(ptr, 1);
@@ -36,14 +39,14 @@ pub fn parse(buf: &[u8]) -> Result<Request, String> {
         1 => AType::IPv4,
         3 => AType::DOMAINNAME,
         4 => AType::IPv6,
-        _ => return Err(String::from("ccc")),
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse request data")),
     };
 
     march!(ptr, 1);
 
     let dest_addr = match atype {
         AType::IPv4 => IPv4Addr::new(buf, ptr),
-        AType::DOMAINNAME => String::from(""),
+        AType::DOMAINNAME => DomainName::new(buf, ptr),
         AType::IPv6 => IPv6Addr::new(buf, ptr),
     };
 

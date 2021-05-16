@@ -1,76 +1,65 @@
-use super::super::protocol;
+use crate::application::base::{InboundHandler};
+use crate::protocol::common::handler::Handler;
+use crate::protocol::socks5::stream::Socks5Stream;
 
-pub async fn dispatch(socket: tokio::net::TcpStream) -> Result<(), String> {
-    // TODO: Should decide which protocol to use based on configs
-    let mut handler = protocol::socks5::handler::Handler::new(socket);
+use tokio::net::TcpStream;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio_rustls::TlsAcceptor;
+use tokio_rustls::server::TlsStream;
 
-    return match handler.handle().await {
-        Ok(_) => Ok(()),
-        Err(e) => Err(e)
-    }
+use std::io::Error;
+use futures::future;
+use log::{info, warn};
 
-    // let mut buf = [0; 1024];
-
-    // let n = match socket.read(&mut buf).await {
-    //     Ok(n) => n,
-    //     Err(e) => {
-    //         warn!("failed to read from socket; err = {:?}", e);
-    //         return Err("Failed to read socket");
-    //     }
+pub async fn dispatch<IO>(socket: IO, tls_acceptor: TlsAcceptor, mode: &str) -> Result<(), Error>
+    where
+        IO: AsyncRead + AsyncWrite + Unpin
+{
+    // let mut stream = match tls_acceptor.accept(socket).await {
+    //     Ok(stream) => stream,
+    //     Err(e) => return Err(e)
     // };
 
-    // // debug!("Read {} bytes of data\n {:?}", n, vec!(&buf[0..50]));
+    let mut stream = Socks5Stream::new(socket, [(8080u16>>8) as u8, 8080u16 as u8]);
 
-    // // Socks5 ack
-    // let res = [5, 0];
-    // if let Err(e) = socket.write_all(&res).await {
-    //     error!("failed to write to socket; err = {:?}", e);
-    // }
+    let request = stream.handshake().await?;
 
-    // // Read request
-    // match socket.read(&mut buf).await {
-    //     Ok(n) => n,
-    //     Err(e) => {
-    //         warn!("failed to read from socket; err = {:?}", e);
-    //         return Err("Failed to read socket");
+    // Starts transport process
+    let mut outbound = match TcpStream::connect(
+        request.request_addr_port()).await {
+        Ok(s) => s,
+        Err(e) => return Err(e)
+    };
+
+    info!("Established TCP connection to {}", request.request_addr_port());
+
+    let (mut source_read, mut source_write) = tokio::io::split(stream);
+    let (mut target_read, mut target_write) = outbound.split();
+
+    match future::join(tokio::io::copy(&mut source_read, &mut target_write),
+                       tokio::io::copy(&mut target_read, &mut source_write))
+        .await {
+        (Err(e), _) | (_, Err(e)) => Err(e.to_string()),
+        _ => Ok(()),
+    };
+
+    // let (inbound, outbound) = match mode.as_str() {
+    //     "client" => {
+    //         //let inbound_handler = protocol::socks5::handler::Socks5Handler::new(socket);
+    //         // let inbound = InboundHandler::new(Box::new(handler));
+    //         return Err(String::new())
     //     }
+    //     "server" => {
+    //         return Err(String::new())
+    //     },
+    //     "socks5" =>  {
+    //         // let inbound_handler = protocol::socks5::handler::Socks5Handler::new(socket);
+    //         // let inbound = InboundHandler::new(Box::new(inbound_handler));
+    //         // (inbound_handler, ())
+    //         return Err(String::new())
+    //     }
+    //     _ => { return Err(String::new())}
     // };
 
-    // let request = match protocol::socks5::parser::parse(&buf) {
-    //     Ok(r) => r,
-    //     Err(e) => {
-    //         warn!("Error parsing socks5 request datagram: {}", e);
-    //         return Err("Error parsing socks5 request");
-    //     }
-    // };
-
-    // let reply = [5, 0, 0, 1, 127, 0, 0, 1, 0x1f, 0x90];
-    // if let Err(e) = socket.write_all(&reply).await {
-    //     error!("failed to write to socket; err = {:?}", e);
-    // }
-
-    // // Establish remote connection to socks target
-    // let target = tokio::net::TcpStream::connect(request.request_addr_port());
-
-    // debug!("Dialing TCP connection to {}", request.request_addr_port());
-
-    // loop {
-    //     let n = match socket.read(&mut buf).await {
-    //         Ok(n) if n == 0 => {
-    //             info!("socket closed");
-    //             break;
-    //         }
-    //         Ok(n) => n,
-    //         Err(e) => {
-    //             warn!("failed to read from socket; err = {:?}", e);
-    //             return Err("Failed to read socket");
-    //         }
-    //     };
-
-        
-
-    //     debug!("Read {} bytes of data", n);
-    // }
-
-    // Ok(())
+    Ok(())
 }
