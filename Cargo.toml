@@ -9,11 +9,17 @@ edition = "2018"
 [dependencies]
 log = "0.4.14"
 env_logger = "0.8.3"
-tokio = { version = "1.5.0", features = ["full"] }
-tokio-util = { version = "0.6.6", features = ["full"] }
-tokio-stream = { version = "0.1.5" }
+
+tokio = { version = "1.6.0", features = ["full"] }
+tokio-util = { version = "0.6.7", features = ["full"] }
+tokio-stream = { version = "0.1.6" }
 tokio-rustls = "0.22.0"
-futures = { version = "0.3.14", features = ["thread-pool"]}
+futures = { version = "0.3.15", features = ["thread-pool"]}
 serde_json = { version = "1.0" }
 rustls = { version = "0.19.1" }
 async-trait = "0.1.50"
+webpki-roots = "0.21"
+
+byteorder = "1.4.3"
+bytes = "1.0.1"
+itertools = "0.10.0"

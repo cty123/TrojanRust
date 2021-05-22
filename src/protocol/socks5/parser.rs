@@ -1,66 +1,48 @@
 use log::debug;
 
-use super::super::common::addr::{IPv4Addr, IPv6Addr};
-use super::base::{AType, Command, Request};
-use crate::protocol::common::addr::DomainName;
 use std::io::{Error, ErrorKind};
 use std::io::Result;
 
-macro_rules! march {
-    ($ptr:ident, $i:expr) => {
-        $ptr += $i;
-    };
-}
+use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt};
 
-pub fn parse(buf: &[u8]) -> Result<Request> {
-    let mut ptr = 0;
+use crate::protocol::socks5::base::Request;
+use crate::protocol::common::command::Command;
+use crate::protocol::common::addr::{AType, DomainName, IPv4Addr, IPv6Addr};
 
-    let version = match buf[ptr] {
-        5 => 0x5,
+pub async fn parse<IO>(mut stream: IO) -> Result<Request>
+    where
+        IO: AsyncRead + AsyncWrite + Unpin
+{
+    let mut buf = [0; 128];
+
+    stream.read(&mut buf).await?;
+
+    let version = match buf[0] {
+        5 => 5,
         _ => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse request data")),
     };
 
-    march!(ptr, 1);
+    let command = buf[1];
 
-    let command = match buf[ptr] {
-        1 => Command::CONNECT,
-        2 => Command::BIND,
-        3 => Command::UDPASSOCIATE,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse request data")),
-    };
+    let rsv = buf[2];
 
-    march!(ptr, 1);
+    let atype = buf[3];
 
-    let rsv = buf[ptr];
-
-    march!(ptr, 1);
-
-    let atype = match buf[ptr] {
-        1 => AType::IPv4,
-        3 => AType::DOMAINNAME,
-        4 => AType::IPv6,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse request data")),
-    };
-
-    march!(ptr, 1);
-
-    let dest_addr = match atype {
-        AType::IPv4 => IPv4Addr::new(buf, ptr),
-        AType::DOMAINNAME => DomainName::new(buf, ptr),
-        AType::IPv6 => IPv6Addr::new(buf, ptr),
-    };
-
+    let mut addr = [0; 16];
+    let mut port = [0; 2];
     match atype {
-        AType::IPv4 => march!(ptr, 4),
-        AType::DOMAINNAME => march!(ptr, 256),
-        AType::IPv6 => march!(ptr, 16),
+        1 => {
+            addr[0..4].copy_from_slice(&buf[4..8]);
+            port[0..2].copy_from_slice(&buf[8..10]);
+        },
+        4 => {
+            addr[0..16].copy_from_slice(&buf[4..20]);
+            port[0..2].copy_from_slice(&buf[20..22]);
+        }
+        _ => {}
     }
 
-    let dest_port = u16::from_be_bytes([buf[ptr], buf[ptr + 1]]);
-
-    march!(ptr, 2);
-
-    let request = Request::new(version, command, rsv, atype, dest_addr, dest_port);
+    let request = Request::new(version, command, rsv, atype, port, addr);
 
     return Ok(request);
 }

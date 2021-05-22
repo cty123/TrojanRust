@@ -1,5 +1,21 @@
 use std::convert::TryInto;
-use crate::protocol::socks5::base::AType::DOMAINNAME;
+use std::fmt::{Formatter, Display, Result};
+
+pub enum AType {
+    IPv4 = 1,
+    DOMAINNAME = 3,
+    IPv6 = 4,
+}
+
+impl Display for AType {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            AType::IPv4 => write!(f, "ipv4"),
+            AType::DOMAINNAME => write!(f, "domain"),
+            AType::IPv6 => write!(f, "ipv6"),
+        }
+    }
+}
 
 pub trait DestinationAddr {
     fn addr(&self) -> String;

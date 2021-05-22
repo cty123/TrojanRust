@@ -1,12 +1,13 @@
 use log::{info, warn};
 use tokio::net::TcpListener;
-use rustls::internal::pemfile::{certs, rsa_private_keys, pkcs8_private_keys};
+use rustls::internal::pemfile::{certs, pkcs8_private_keys};
 use std::io::BufReader;
 use std::fs::File;
 use std::io;
 use rustls::{NoClientAuth, ServerConfig, Certificate, PrivateKey};
 use tokio_rustls::TlsAcceptor;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 mod transport;
 mod protocol;
@@ -27,19 +28,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let acceptor = TlsAcceptor::from(Arc::new(config));
 
     loop {
-        let (socket, _) = listener.accept().await?;
+        let (mut socket, _) = listener.accept().await?;
         let acceptor = acceptor.clone();
 
         tokio::spawn(async move {
-            match transport::tcp::dispatch(socket, acceptor, "socks5").await {
-                Ok(_) => {
-                    info!("Finished processing socket");
-                },
-                Err(e) => {
-                    warn!("Error in dispatching the TCP socket: {}", e);
-                }
+            if false {
+                let stream = match acceptor.accept(socket).await {
+                    Ok(stream) => stream,
+                    Err(_) => return
+                };
+                dispatch(stream).await;
+            } else {
+                dispatch(socket).await;
             }
         });
+    }
+}
+
+async fn dispatch<IO>(socket: IO)
+    where IO: AsyncRead + AsyncWrite + Unpin
+{
+    match transport::tcp::dispatch(socket, "client").await {
+        Ok(_) => {
+            info!("Finished processing socket");
+        }
+        Err(e) => {
+            warn!("Error in dispatching the TCP socket: {}", e);
+        }
     }
 }
 

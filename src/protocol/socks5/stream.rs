@@ -1,6 +1,4 @@
-use crate::protocol::socks5::base::{Request, ServerHello, RequestAck};
-
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, AsyncReadExt, AsyncWriteExt, WriteHalf, ReadHalf, Split};
+use log::{debug, error, info, warn};
 
 use std::task::{Context, Poll};
 use std::pin::Pin;
@@ -8,14 +6,15 @@ use std::io::Result;
 use std::io::Error;
 use std::io::ErrorKind;
 
-use log::{debug, error, info, warn};
-use crate::protocol::socks5::parser;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt, WriteHalf, ReadHalf, Split, ReadBuf};
 use futures::{future, StreamExt, SinkExt};
+
+use crate::protocol::socks5::base::{Request, ServerHello, RequestAck};
+use crate::protocol::socks5::parser;
 
 pub struct Socks5Stream<IO> {
     stream: IO,
     port: [u8; 2],
-    buf: [u8; 1024],
 }
 
 impl<IO> Socks5Stream<IO>
@@ -26,7 +25,6 @@ impl<IO> Socks5Stream<IO>
         Socks5Stream {
             stream,
             port,
-            buf: [0; 1024],
         }
     }
 }
@@ -83,17 +81,16 @@ impl<IO> Socks5Stream<IO>
         Ok(request)
     }
 
-    // pub fn split(&self) -> (ReadHalf<IO>, WriteHalf<IO>) {
-    // }
-
     async fn init_ack(&mut self) -> Result<()> {
+        let mut buf = [0; 32];
+
         // Receive the client hello message
-        let n = match self.stream.read(&mut self.buf).await {
+        let n = match self.stream.read(&mut buf).await {
             Ok(n) => n,
             Err(e) => return Err(e)
         };
 
-        debug!("Read {} bytes of data: {:?}", n, &self.buf[0..n]);
+        debug!("Read {} bytes of data: {:?}", n, &buf[0..n]);
 
         // TODO: Validate client hello message
         // Reply with server hello message
@@ -108,17 +105,8 @@ impl<IO> Socks5Stream<IO>
     }
 
     async fn read_request(&mut self) -> Result<Request> {
-        let n = match self.stream.read(&mut self.buf).await {
-            Ok(n) => n,
-            Err(e) => {
-                warn!("Failed to read from socket; err = {:?}", e);
-                return Err(e);
-            }
-        };
-
-        debug!("Read {} bytes of data: {:?}", n, &self.buf[0..n]);
-
-        return parser::parse(&self.buf);
+        let request = parser::parse(&mut self.stream).await?;
+        return Ok(request)
     }
 
     async fn write_request_ack(&mut self)-> Result<()> {
