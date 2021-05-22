@@ -43,12 +43,18 @@ pub async fn dispatch<IO>(inbound_stream: IO, mode: &str) -> Result<(), Error>
         let mut inbound_stream = Socks5Stream::new(inbound_stream, [(8080u16 >> 8) as u8, 8080u16 as u8]);
         let request = inbound_stream.handshake().await?;
 
-        let vless_request = request.to_vless_request();
+        // let vless_request = request.to_vless_request();
 
-        info!("Dialing remote at 127.0.0.1:8081");
-        let mut connection = dial("127.0.0.1:8081".parse().unwrap()).await.unwrap();
-        let mut outbound_stream = VlessOutboundStream::new(connection);
-        outbound_stream.write_request(vless_request).await?;
+        info!("Dialing remote at {}", request.request_addr_port());
+        let mut connection = match dial(request.request_addr_port()).await {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Failed to establish connection to destination");
+                return Err(e);
+            }
+        };
+        let mut outbound_stream = DirectStream::new(connection, false);
+        // outbound_stream.write_request(vless_request).await?;
 
         let (mut source_read, mut source_write) = tokio::io::split(inbound_stream);
         let (mut target_read, mut target_write) = tokio::io::split(outbound_stream);

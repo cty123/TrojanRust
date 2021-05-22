@@ -1,17 +1,3 @@
-use std::fmt::{Display, Formatter, Result};
-
-pub enum Command {
-    CONNECT = 1,
-    BIND = 2,
-    UDPASSOCIATE = 3,
-}
-
-impl Display for Command {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        match self {
-            Command::CONNECT => write!(f, "CONNECT"),
-            Command::BIND => write!(f, "BIND"),
-            Command::UDPASSOCIATE => write!(f, "UDPASSOCIATE"),
-        }
-    }
-}
+pub const CONNECT: u8 = 1;
+pub const BIND: u8 = 2;
+pub const UDP_ASSOCIATE: u8 = 3;

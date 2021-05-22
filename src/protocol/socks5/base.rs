@@ -1,10 +1,8 @@
-use crate::protocol::common::addr::AType;
-use crate::protocol::common::command::Command;
-use crate::protocol::vless;
-
 use std::convert::TryInto;
 use futures::StreamExt;
 use itertools::Itertools;
+
+use crate::protocol::vless;
 
 pub struct Request {
     version: u8,
@@ -103,16 +101,14 @@ impl Request {
     }
 
     pub fn to_vless_request(&self) -> vless::base::Request {
-        return vless::base::Request::new(0, [0; 16], 1, self.port, 1, self.addr);
+        return vless::base::Request::new(0, [0; 16], self.command, self.port, self.atype, self.addr);
     }
 
     fn get_addr(&self) -> String {
         return match self.atype {
-            1 => self.addr[0..4].to_vec().iter().join(":"),
-            4 => self.addr.to_vec().into_iter()
-                .map(|i| i.to_string())
-                .join(":"),
-            _ => "Unsupported".parse().unwrap()
+            1 => self.addr[0..4].to_vec().iter().join("."),
+            4 => self.addr.to_vec().iter().join(":"),
+            _ => String::from("Unsupported")
         };
     }
 
