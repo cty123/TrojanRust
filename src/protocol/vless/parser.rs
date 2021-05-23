@@ -3,13 +3,12 @@ use tokio::io::{AsyncWriteExt, AsyncRead, AsyncReadExt};
 use std::io::{Result, Error, ErrorKind};
 use std::convert::TryInto;
 
+use crate::protocol::vless::base::VERSION;
 use crate::protocol::vless::base::Request;
 use crate::protocol::common::command::{CONNECT, BIND, UDP_ASSOCIATE};
 use crate::protocol::common::addr::{ATYPE_IPV4, ATYPE_DOMAIN_NAME, ATYPE_IPV6, IPV4_SIZE, IPV6_SIZE};
 
-const VERSION: u8 = 1;
 const REQUEST_HEADER_SIZE: usize = 1 + 16 + 1 + 2 + 1;
-
 const INDEX_VERSION: usize = 0;
 const INDEX_UUID: usize = 1;
 const INDEX_COMMAND: usize = INDEX_UUID + 16;
@@ -26,7 +25,7 @@ pub async fn parse<IO>(mut stream: IO) -> Result<Request>
 
     let version = match buf[INDEX_VERSION] {
         VERSION => VERSION,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "Incorrect version numebr")),
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "Incorrect version number")),
     };
 
     // Extract the UUID

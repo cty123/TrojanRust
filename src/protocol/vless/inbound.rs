@@ -1,15 +1,20 @@
 use log::{debug, error, info, warn};
-use tokio::io::{AsyncWrite, AsyncRead, ReadBuf, AsyncReadExt, AsyncWriteExt};
+
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::io::{Result, Error, ErrorKind};
 
-use crate::protocol::vless::base::Request;
+use tokio::io::{AsyncWrite, AsyncRead, ReadBuf, AsyncReadExt, AsyncWriteExt};
+
+use crate::protocol::vless::base::VERSION;
+use crate::protocol::vless::base::{Request, Response};
 use crate::protocol::vless::parser::parse;
 
 pub struct VlessInboundStream<IO>
 {
     stream: IO,
+    is_request_read: bool,
+    is_response_written: bool
 }
 
 impl<IO> AsyncRead for VlessInboundStream<IO>
@@ -44,7 +49,9 @@ impl<IO> VlessInboundStream<IO>
 {
     pub fn new(stream: IO) -> VlessInboundStream<IO> {
         return VlessInboundStream {
-            stream
+            stream,
+            is_request_read: false,
+            is_response_written: false
         }
     }
 
@@ -53,26 +60,13 @@ impl<IO> VlessInboundStream<IO>
             Ok(r) => r,
             Err(e) => return Err(Error::new(ErrorKind::InvalidInput, e))
         };
-
+        self.is_request_read = true;
         Ok(request)
     }
 
     pub async fn ack_request(&mut self) -> Result<()>{
-        let ack = [1 as u8];
-        return self.stream.write_all(&ack).await;
+        let response = Response::new(VERSION);
+        self.is_response_written = true;
+        return self.stream.write_all(&response.to_bytes()).await;
     }
 }
-
-// impl<IO> AsyncReadExt for VlessInboundStream<IO>
-//     where
-//         IO: AsyncRead + AsyncWrite + Unpin
-// {
-//
-// }
-//
-// impl<IO> AsyncWriteExt for VlessInboundStream<IO>
-//     where
-//         IO: AsyncRead + AsyncWrite + Unpin
-// {
-//
-// }

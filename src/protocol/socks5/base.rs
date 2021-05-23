@@ -101,7 +101,7 @@ impl Request {
     }
 
     pub fn to_vless_request(&self) -> vless::base::Request {
-        return vless::base::Request::new(0, [0; 16], self.command, self.port, self.atype, self.addr);
+        return vless::base::Request::new(1, [0; 16], self.command, self.port, self.atype, self.addr);
     }
 
     fn get_addr(&self) -> String {
