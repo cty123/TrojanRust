@@ -2,34 +2,32 @@ use log::{debug, error, info, warn};
 
 use std::task::{Context, Poll};
 use std::pin::Pin;
-use std::io::Result;
-use std::io::Error;
-use std::io::ErrorKind;
+use std::io::{Result, Error, ErrorKind};
 
-use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt, WriteHalf, ReadHalf, Split, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt, WriteHalf, ReadHalf, Split, ReadBuf, BufReader};
 use futures::{future, StreamExt, SinkExt};
 
 use crate::protocol::socks5::base::{Request, ServerHello, RequestAck};
 use crate::protocol::socks5::parser;
 
-pub struct Socks5Stream<IO> {
-    stream: IO,
+pub struct Socks5InboundStream<IO> {
+    stream: BufReader<IO>,
     port: [u8; 2],
 }
 
-impl<IO> Socks5Stream<IO>
+impl<IO> Socks5InboundStream<IO>
     where
         IO: AsyncRead + AsyncWrite + Unpin
 {
-    pub fn new(stream: IO, port: [u8; 2]) -> Socks5Stream<IO> {
-        Socks5Stream {
-            stream,
+    pub fn new(stream: IO, port: [u8; 2]) -> Socks5InboundStream<IO> {
+        Socks5InboundStream {
+            stream: BufReader::with_capacity(1024, stream),
             port,
         }
     }
 }
 
-impl<IO> AsyncRead for Socks5Stream<IO>
+impl<IO> AsyncRead for Socks5InboundStream<IO>
     where
         IO: AsyncRead + AsyncWrite + Unpin
 {
@@ -38,7 +36,7 @@ impl<IO> AsyncRead for Socks5Stream<IO>
     }
 }
 
-impl<IO> AsyncWrite for Socks5Stream<IO>
+impl<IO> AsyncWrite for Socks5InboundStream<IO>
     where
         IO: AsyncRead + AsyncWrite + Unpin
 {
@@ -55,7 +53,7 @@ impl<IO> AsyncWrite for Socks5Stream<IO>
     }
 }
 
-impl<IO> Socks5Stream<IO>
+impl<IO> Socks5InboundStream<IO>
     where
         IO: AsyncRead + AsyncWrite + Unpin
 {

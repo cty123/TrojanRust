@@ -31,6 +31,23 @@ impl<IO> AsyncWrite for VlessInboundStream<IO>
         IO: AsyncRead + AsyncWrite + Unpin
 {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
+        if !self.is_response_written {
+            let bytes = [1; 0];
+            let len = bytes.len();
+            let mut cur = 0;
+
+            while cur < len {
+                let n = match Pin::new(&mut self.stream).poll_write(cx, &bytes[cur..len]) {
+                    Poll::Ready(res) => match res {
+                        Ok(n) => n,
+                        Err(e) => return Poll::Ready(Err(e))
+                    }
+                    Poll::Pending => 0
+                };
+                cur += n;
+            }
+            self.is_response_written = true;
+        }
         return Pin::new(&mut self.stream).poll_write(cx, buf);
     }
 
@@ -60,6 +77,7 @@ impl<IO> VlessInboundStream<IO>
             Ok(r) => r,
             Err(e) => return Err(Error::new(ErrorKind::InvalidInput, e))
         };
+        debug!("Read request {}", request.request_addr_port());
         self.is_request_read = true;
         Ok(request)
     }

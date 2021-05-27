@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     info!("Starting Rust-proxy at 127.0.0.1:8080");
 
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let listener = TcpListener::bind("0.0.0.0:8080").await?;
 
     // TLS
     let config = setup_certificate("./cert/test.crt", "./cert/test.key").unwrap();
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let acceptor = acceptor.clone();
 
         tokio::spawn(async move {
-            if false {
+            if true {
                 let stream = match acceptor.accept(socket).await {
                     Ok(stream) => stream,
                     Err(_) => return
@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn dispatch<IO>(socket: IO)
     where IO: AsyncRead + AsyncWrite + Unpin
 {
-    match transport::tcp::dispatch(socket, "client").await {
+    match transport::tcp::dispatch(socket, "server").await {
         Ok(_) => {
             info!("Finished processing socket");
         }

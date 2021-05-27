@@ -6,7 +6,7 @@ use byteorder::{BigEndian, ByteOrder};
 use crate::protocol::common::addr::{IPV4_SIZE, IPV6_SIZE, ATYPE_IPV4, ATYPE_IPV6, ipv4_to_string, ipv6_to_string};
 use std::convert::TryInto;
 
-pub const VERSION: u8 = 1;
+pub const VERSION: u8 = 0;
 
 pub struct Request {
     version: u8,
