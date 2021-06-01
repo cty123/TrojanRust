@@ -6,9 +6,10 @@ use std::io::{Result, Error, ErrorKind};
 
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 
-use crate::protocol::trojan::base::Request;
+use crate::protocol::trojan::base::{Request, UdpRequest};
 use crate::protocol::common::command::{CONNECT, UDP_ASSOCIATE};
 use crate::protocol::common::addr::{ATYPE_IPV4, ATYPE_IPV6, ATYPE_DOMAIN_NAME, IPV4_SIZE, IPV6_SIZE};
+use byteorder::BigEndian;
 
 pub async fn parse<IO>(mut stream: IO) -> Result<Request>
     where
@@ -40,29 +41,23 @@ pub async fn parse<IO>(mut stream: IO) -> Result<Request>
     let mut addr = [0; 256];
     let addr_size = match atype {
         ATYPE_IPV4 => {
-            let mut buf = [0; 4];
-            stream.read_exact(&mut buf).await?;
-            addr[0..IPV4_SIZE].copy_from_slice(&buf);
+            stream.read_exact(&mut addr[0..IPV4_SIZE]).await?;
             IPV4_SIZE
         }
         ATYPE_IPV6 => {
-            let mut buf = [0; 16];
-            stream.read_exact(&mut buf).await?;
-            addr[0..IPV6_SIZE].copy_from_slice(&buf);
+            stream.read_exact(&mut addr[0..IPV6_SIZE]).await?;
             IPV6_SIZE
-        },
+        }
         ATYPE_DOMAIN_NAME => {
             let addr_size = usize::from(stream.read_u8().await?);
-            let mut buf = vec![0; addr_size];
-            stream.read_exact(&mut buf).await?;
-            addr[0..addr_size].copy_from_slice(&buf);
+            stream.read_exact(&mut addr[0..addr_size]).await?;
             addr_size
         }
         _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported address type"))
     };
 
-    let mut port = [0; 2];
-    stream.read_exact(&mut port).await?;
+    // Read port number
+    let mut port = stream.read_u16().await?;
 
     let request = Request::new(hex, command, atype, addr, addr_size, port);
 
@@ -71,40 +66,50 @@ pub async fn parse<IO>(mut stream: IO) -> Result<Request>
 
     debug!("Read request {}", request.request_addr_port());
 
-    //
-    // if command == UDP_ASSOCIATE {
-    //     return read_udp(stream).await;
-    // }
-
     Ok(request)
 }
 
-// async fn read_udp<IO>(mut stream: IO) -> Result<Request>
-//     where
-//         IO: AsyncReadExt + AsyncWriteExt + Unpin {
-//
-//     let atype = stream.read_u8().await?;
-//
-//     let mut addr = [0; 16];
-//     let mut port = [0; 2];
-//
-//     match atype {
-//         1 => {
-//             let mut buf = [0; 4 + 2 + 2 + 2];
-//             stream.read_exact(&mut buf).await?;
-//             addr[0..4].copy_from_slice(&buf[0..4]);
-//             port.copy_from_slice(&buf[4..6]);
-//         }
-//         4 => {
-//             let mut buf = [0; 16 + 2 + 2 + 2];
-//             stream.read_exact(&mut buf).await?;
-//             addr.copy_from_slice(&buf[0..16]);
-//             port.copy_from_slice(&buf[16..18]);
-//         }
-//         _ => {}
-//     }
-//
-//     let request = Request::new([0; 56], UDP_ASSOCIATE, atype, addr, port);
-//
-//     Ok(request)
-// }
+pub async fn parse_udp<IO>(mut stream: IO) -> Result<UdpRequest>
+    where
+        IO: AsyncReadExt + AsyncWriteExt + Unpin {
+
+    // Extract address type
+    let atype = stream.read_u8().await?;
+
+    let mut addr = [0; 256];
+    let addr_size = match atype {
+        ATYPE_IPV4 => {
+            stream.read_exact(&mut addr[0..IPV4_SIZE]).await?;
+            IPV4_SIZE
+        }
+        ATYPE_IPV6 => {
+            stream.read_exact(&mut addr[0..IPV6_SIZE]).await?;
+            IPV6_SIZE
+        }
+        ATYPE_DOMAIN_NAME => {
+            let addr_size = usize::from(stream.read_u8().await?);
+            stream.read_exact(&mut addr[0..addr_size]).await?;
+            addr_size
+        }
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported address type"))
+    };
+
+
+    // Extract port number
+    let mut port = stream.read_u16().await?;
+
+    // Read payload length
+    let payload_size = usize::from(stream.read_u16().await?);
+
+    // Read trailing CRLF
+    let mut crlf = [0; 2];
+    stream.read_exact(&mut crlf).await?;
+
+    // Read payload
+    let mut payload = [0; 2048];
+    stream.read_exact(&mut payload[0..payload_size]).await?;
+
+    let request = UdpRequest::new(atype, addr, addr_size, port, payload, payload_size);
+
+    Ok(request)
+}

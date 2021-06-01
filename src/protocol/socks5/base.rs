@@ -2,8 +2,6 @@ use std::convert::TryInto;
 use futures::StreamExt;
 use itertools::Itertools;
 
-use crate::protocol::vless;
-
 pub struct Request {
     version: u8,
     command: u8,
@@ -98,10 +96,6 @@ impl Request {
             self.get_addr(),
             self.get_port()
         );
-    }
-
-    pub fn to_vless_request(&self) -> vless::base::Request {
-        return vless::base::Request::new(1, [0; 16], self.command, self.port, self.atype, self.addr);
     }
 
     fn get_addr(&self) -> String {

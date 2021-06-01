@@ -1,11 +1,11 @@
 use std::task::{Context, Poll};
 use std::io::{Result, Error, ErrorKind};
-
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use std::pin::Pin;
 
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, BufWriter};
+
 pub struct TrojanOutboundStream<IO> {
-    stream: IO
+    stream: BufWriter<IO>
 }
 
 impl<IO> AsyncRead for TrojanOutboundStream<IO>

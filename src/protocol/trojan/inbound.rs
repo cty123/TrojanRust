@@ -28,6 +28,7 @@ impl<IO> AsyncWrite for TrojanInboundStream<IO>
         IO: AsyncRead + AsyncWrite + Unpin
 {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
+        info!("Write bytes {:?}", buf);
         return Pin::new(&mut self.stream).poll_write(cx, buf);
     }
 
@@ -46,7 +47,7 @@ impl<IO> TrojanInboundStream<IO>
 {
     pub fn new(stream: IO) -> TrojanInboundStream<IO> {
         return TrojanInboundStream {
-            stream: tokio::io::BufReader::with_capacity(1024, stream)
+            stream: tokio::io::BufReader::with_capacity(2048, stream),
         };
     }
 
