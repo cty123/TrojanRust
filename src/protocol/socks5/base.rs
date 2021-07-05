@@ -1,14 +1,13 @@
-use std::convert::TryInto;
-use futures::StreamExt;
-use itertools::Itertools;
+// use std::net::IpAddr;
+use crate::protocol::common::addr::IpAddress;
 
 pub struct Request {
     version: u8,
     command: u8,
     rsv: u8,
     atype: u8,
-    addr: [u8; 16],
-    port: [u8; 2],
+    addr: IpAddress,
+    port: u16,
 }
 
 pub struct ClientHello {
@@ -71,8 +70,8 @@ impl Request {
         command: u8,
         rsv: u8,
         atype: u8,
-        port: [u8; 2],
-        addr: [u8; 16],
+        port: u16,
+        addr: IpAddress,
     ) -> Request {
         return Request {
             version,
@@ -85,29 +84,16 @@ impl Request {
     }
 
     pub fn request_addr_port(&self) -> String {
-        return format!("{}:{}", self.get_addr(), self.get_port());
+        return format!("{}:{}", self.addr.to_string(), self.port);
     }
 
     pub fn dump_request(&self) -> String {
         return format!(
-            "[{} {}::{}:{}]",
+            "[{} => {}:{}]",
             self.get_command(),
-            self.get_atype(),
-            self.get_addr(),
-            self.get_port()
+            self.addr.to_string(),
+            self.port
         );
-    }
-
-    fn get_addr(&self) -> String {
-        return match self.atype {
-            1 => self.addr[0..4].to_vec().iter().join("."),
-            4 => self.addr.to_vec().iter().join(":"),
-            _ => String::from("Unsupported")
-        };
-    }
-
-    fn get_port(&self) -> u16 {
-        return ((self.port[0] as u16) << 8) | self.port[1] as u16;
     }
 
     fn get_command(&self) -> &str {
@@ -117,14 +103,5 @@ impl Request {
             3 => "UDP Associate",
             _ => "Unsupported"
         }
-    }
-
-    fn get_atype(&self) -> &str {
-       return match self.atype {
-           1 => "IPv4",
-           3 => "DomainName",
-           4 => "IPv6",
-           _ => "Unsupported"
-       }
     }
 }

@@ -30,6 +30,6 @@ impl<IO> AsyncWrite for TrojanOutboundStream<IO>
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        return Pin::new(&mut self.stream).poll_flush(cx);
+        return Pin::new(&mut self.stream).poll_shutdown(cx);
     }
 }

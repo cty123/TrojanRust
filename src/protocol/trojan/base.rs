@@ -1,24 +1,23 @@
-use std::convert::TryInto;
+use std::net::IpAddr;
 
 use bytes::{BytesMut, BufMut};
-use byteorder::{BigEndian, ByteOrder};
 
 use crate::protocol::common::addr::{IPV4_SIZE, IPV6_SIZE, DOMAIN_NAME_SIZE, ATYPE_IPV4, ATYPE_IPV6,
                                     ATYPE_DOMAIN_NAME, ipv4_to_string, ipv6_to_string};
-use crate::protocol::common::command::{CONNECT, UDP_ASSOCIATE};
+use crate::protocol::common::command::{CONNECT, UDP};
 
 pub struct Request {
     hex: [u8; 56],
     command: u8,
     atype: u8,
-    addr: [u8; 256],
+    addr: IpAddr,
     addr_len: usize,
     port: u16,
 }
 
 pub struct UdpRequest {
     atype: u8,
-    addr: [u8; 256],
+    addr: IpAddr,
     addr_len: usize,
     port: u16,
     payload: [u8; 2048],

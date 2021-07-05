@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize configurations
     env_logger::init();
-    info!("Starting Rust-proxy at 127.0.0.1:8080");
+    info!("Starting Rust-proxy at {}", "127.0.0.1:8080");
 
     let listener = TcpListener::bind("0.0.0.0:8080").await?;
 

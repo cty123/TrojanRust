@@ -15,7 +15,7 @@ use crate::protocol::socks5::inbound::Socks5InboundStream;
 use crate::protocol::direct::stream::DirectStream;
 use crate::protocol::trojan::inbound::TrojanInboundStream;
 use crate::infra::udp::stream::UdpStream;
-use crate::protocol::common::command::UDP_ASSOCIATE;
+use crate::protocol::common::command::UDP;
 use crate::protocol::trojan::packet::PacketTrojanOutboundStream;
 
 pub async fn dispatch<IO>(mut inbound_stream: IO, mode: &str) -> Result<(), Error>
@@ -27,7 +27,7 @@ pub async fn dispatch<IO>(mut inbound_stream: IO, mode: &str) -> Result<(), Erro
     let mut inbound_stream = TrojanInboundStream::new(inbound_stream);
     let request = inbound_stream.handshake().await?;
 
-    if request.get_command() == UDP_ASSOCIATE {
+    if request.get_command() == UDP {
         info!("Handling udp connection");
 
         let mut connection = PacketTrojanOutboundStream::new().await?;

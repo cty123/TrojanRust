@@ -1,11 +1,10 @@
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 
 use std::task::{Context, Poll};
 use std::pin::Pin;
-use std::io::{Result, Error, ErrorKind};
+use std::io::Result;
 
-use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt, WriteHalf, ReadHalf, Split, ReadBuf, BufReader};
-use futures::{future, StreamExt, SinkExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt, ReadBuf, BufReader};
 
 use crate::protocol::socks5::base::{Request, ServerHello, RequestAck};
 use crate::protocol::socks5::parser;
@@ -49,7 +48,7 @@ impl<IO> AsyncWrite for Socks5InboundStream<IO>
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        return Pin::new(&mut self.stream).poll_flush(cx);
+        return Pin::new(&mut self.stream).poll_shutdown(cx);
     }
 }
 
