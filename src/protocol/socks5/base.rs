@@ -1,4 +1,6 @@
-// use std::net::IpAddr;
+use std::net::IpAddr;
+use bytes::{BytesMut, BufMut};
+
 use crate::protocol::common::addr::IpAddress;
 
 pub struct Request {
@@ -27,9 +29,8 @@ pub struct RequestAck {
     rep: u8,
     rsv: u8,
     atype: u8,
-    // Assume for now that we only use IPv4 for server
-    addr: [u8; 4],
-    port: [u8; 2],
+    addr: IpAddress,
+    port: u16,
 }
 
 impl ServerHello {
@@ -46,7 +47,7 @@ impl ServerHello {
 }
 
 impl RequestAck {
-    pub fn new(version: u8, rep: u8, rsv: u8, atype: u8, addr: [u8; 4], port: [u8; 2]) -> RequestAck {
+    pub fn new(version: u8, rep: u8, rsv: u8, atype: u8, addr: IpAddress, port: u16) -> RequestAck {
         return RequestAck {
             version,
             rep,
@@ -57,10 +58,12 @@ impl RequestAck {
         };
     }
 
-    pub fn to_bytes(&self) -> [u8; 10] {
-        return [self.version, self.rep, self.rsv, 1,
-            self.addr[0], self.addr[1], self.addr[2], self.addr[3],
-            self.port[0], self.port[1]];
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = BytesMut::with_capacity(128);
+        buf.put_slice(&[self.version, self.rep, self.rsv, 1]);
+        buf.put_slice(&self.addr.to_bytes());
+        buf.put_u16(self.port);
+        return buf.to_vec();
     }
 }
 

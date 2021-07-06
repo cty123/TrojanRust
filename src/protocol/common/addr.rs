@@ -15,7 +15,8 @@ pub enum IpAddress {
 }
 
 pub struct DomainName {
-    inner: [u8; 256]
+    inner: [u8; 256],
+    size: usize
 }
 
 impl fmt::Display for DomainName {
@@ -28,13 +29,18 @@ impl fmt::Display for IpAddress {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IpAddress::IpAddr(IpAddr::V4(ip)) => ip.fmt(fmt),
+            IpAddress::IpAddr(IpAddr::V6(ip)) => ip.fmt(fmt),
             IpAddress::Domain(domain) => domain.fmt(fmt)
         }
     }
 }
 
 impl IpAddress {
-    pub fn to_bytes() {
-        unimplemented!()
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            IpAddress::IpAddr(IpAddr::V4(ip)) => ip.octets().to_vec(),
+            IpAddress::IpAddr(IpAddr::V6(ip)) => ip.octets().to_vec(),
+            IpAddress::Domain(domain) => domain.inner[..domain.size].to_vec()
+        }
     }
 }

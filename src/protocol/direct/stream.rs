@@ -1,14 +1,8 @@
-use tokio::io::{AsyncWrite, AsyncRead, ReadBuf};
-use tokio::net::TcpStream;
-use tokio_rustls::{TlsConnector};
-use tokio_rustls::client::{TlsStream};
-
-use std::io::{Result, Error};
-use tokio_rustls::rustls::ClientConfig;
-use std::sync::Arc;
-use tokio_rustls::webpki::DNSNameRef;
+use std::io::Result;
 use std::task::{Context, Poll};
 use std::pin::Pin;
+
+use tokio::io::{AsyncWrite, AsyncRead, ReadBuf};
 
 pub struct DirectStream<IO>
     where
@@ -40,7 +34,7 @@ impl<IO> AsyncWrite for DirectStream<IO>
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        return Pin::new(&mut self.stream).poll_flush(cx);
+        return Pin::new(&mut self.stream).poll_shutdown(cx);
     }
 }
 

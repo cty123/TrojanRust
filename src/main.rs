@@ -25,23 +25,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind("0.0.0.0:8080").await?;
 
     // TLS
-    let config = setup_certificate("./cert/test.crt", "./cert/test.key").unwrap();
-    let acceptor = TlsAcceptor::from(Arc::new(config));
+    // let config = setup_certificate("./cert/test.crt", "./cert/test.key").unwrap();
+    // let acceptor = TlsAcceptor::from(Arc::new(config));
 
     loop {
         let (mut socket, _) = listener.accept().await?;
-        let acceptor = acceptor.clone();
+        // let acceptor = acceptor.clone();
 
         tokio::spawn(async move {
-            if true {
-                let stream = match acceptor.accept(socket).await {
-                    Ok(stream) => stream,
-                    Err(_) => return
-                };
-                dispatch(stream).await;
-            } else {
+            // if true {
+            //     let stream = match acceptor.accept(socket).await {
+            //         Ok(stream) => stream,
+            //         Err(_) => return
+            //     };
+            //     dispatch(stream).await;
+            // } else {
                 dispatch(socket).await;
-            }
+            // }
         });
     }
 }
