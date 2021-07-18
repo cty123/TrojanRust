@@ -1,50 +1,55 @@
-use crate::protocol::socks5::base::{Request, ServerHello, RequestAck};
+use log::{debug, error, info};
 
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, AsyncReadExt, AsyncWriteExt, WriteHalf, ReadHalf, Split};
-
-use std::task::{Context, Poll};
-use std::pin::Pin;
 use std::io::Result;
-use std::io::Error;
-use std::io::ErrorKind;
+use std::net::{IpAddr, Ipv4Addr};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-use log::{debug, error, info, warn};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
+
+use crate::protocol::common::addr::IpAddress;
+use crate::protocol::socks5::base::{Request, RequestAck, ServerHello};
 use crate::protocol::socks5::parser;
-use futures::{future, StreamExt, SinkExt};
 
-pub struct Socks5Stream<IO> {
-    stream: IO,
-    port: [u8; 2],
-    buf: [u8; 1024],
+pub struct Socks5InboundStream<IO> {
+    stream: BufReader<IO>,
+    port: u16,
 }
 
-impl<IO> Socks5Stream<IO>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin
+impl<IO> Socks5InboundStream<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
 {
-    pub fn new(stream: IO, port: [u8; 2]) -> Socks5Stream<IO> {
-        Socks5Stream {
-            stream,
+    pub fn new(stream: IO, port: u16) -> Socks5InboundStream<IO> {
+        Socks5InboundStream {
+            stream: BufReader::with_capacity(1024, stream),
             port,
-            buf: [0; 1024],
         }
     }
 }
 
-impl<IO> AsyncRead for Socks5Stream<IO>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin
+impl<IO> AsyncRead for Socks5InboundStream<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
 {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<Result<()>> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<Result<()>> {
         return Pin::new(&mut self.stream).poll_read(cx, buf);
     }
 }
 
-impl<IO> AsyncWrite for Socks5Stream<IO>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin
+impl<IO> AsyncWrite for Socks5InboundStream<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
 {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize>> {
         return Pin::new(&mut self.stream).poll_write(cx, buf);
     }
 
@@ -53,13 +58,13 @@ impl<IO> AsyncWrite for Socks5Stream<IO>
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        return Pin::new(&mut self.stream).poll_flush(cx);
+        return Pin::new(&mut self.stream).poll_shutdown(cx);
     }
 }
 
-impl<IO> Socks5Stream<IO>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin
+impl<IO> Socks5InboundStream<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
 {
     pub async fn handshake(&mut self) -> Result<Request> {
         // Read and reply for the initial client/server hello messages
@@ -70,7 +75,7 @@ impl<IO> Socks5Stream<IO>
         // Read request and parse it
         let request = match self.read_request().await {
             Ok(r) => r,
-            Err(e) => return Err(e)
+            Err(e) => return Err(e),
         };
 
         info!("Received socks5 request: {}", request.dump_request());
@@ -83,17 +88,16 @@ impl<IO> Socks5Stream<IO>
         Ok(request)
     }
 
-    // pub fn split(&self) -> (ReadHalf<IO>, WriteHalf<IO>) {
-    // }
-
     async fn init_ack(&mut self) -> Result<()> {
+        let mut buf = [0; 32];
+
         // Receive the client hello message
-        let n = match self.stream.read(&mut self.buf).await {
+        let n = match self.stream.read(&mut buf).await {
             Ok(n) => n,
-            Err(e) => return Err(e)
+            Err(e) => return Err(e),
         };
 
-        debug!("Read {} bytes of data: {:?}", n, &self.buf[0..n]);
+        debug!("Read {} bytes of data: {:?}", n, &buf[0..n]);
 
         // TODO: Validate client hello message
         // Reply with server hello message
@@ -108,22 +112,20 @@ impl<IO> Socks5Stream<IO>
     }
 
     async fn read_request(&mut self) -> Result<Request> {
-        let n = match self.stream.read(&mut self.buf).await {
-            Ok(n) => n,
-            Err(e) => {
-                warn!("Failed to read from socket; err = {:?}", e);
-                return Err(e);
-            }
-        };
-
-        debug!("Read {} bytes of data: {:?}", n, &self.buf[0..n]);
-
-        return parser::parse(&self.buf);
+        let request = parser::parse(&mut self.stream).await?;
+        return Ok(request);
     }
 
-    async fn write_request_ack(&mut self)-> Result<()> {
+    async fn write_request_ack(&mut self) -> Result<()> {
         // TODO: Have a better way to write back request ACK
-        let ack = RequestAck::new(5, 0, 0, 1, [127, 0, 0, 1], self.port);
+        let ack = RequestAck::new(
+            5,
+            0,
+            0,
+            1,
+            IpAddress::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            self.port,
+        );
         if let Err(e) = self.stream.write_all(&ack.to_bytes()).await {
             error!("Failed to write to socket, err = {:?}", e);
             return Err(e);

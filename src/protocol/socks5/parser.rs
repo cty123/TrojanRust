@@ -1,66 +1,74 @@
-use log::debug;
-
-use super::super::common::addr::{IPv4Addr, IPv6Addr};
-use super::base::{AType, Command, Request};
-use crate::protocol::common::addr::DomainName;
 use std::io::{Error, ErrorKind};
 use std::io::Result;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-macro_rules! march {
-    ($ptr:ident, $i:expr) => {
-        $ptr += $i;
-    };
-}
+use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt};
 
-pub fn parse(buf: &[u8]) -> Result<Request> {
-    let mut ptr = 0;
+use crate::protocol::common::addr::IpAddress;
+use crate::protocol::socks5::base::Request;
+use crate::protocol::common::command::{CONNECT, BIND, UDP};
+use crate::protocol::common::addr::{ATYPE_IPV4, ATYPE_DOMAIN_NAME, ATYPE_IPV6, IPV4_SIZE, IPV6_SIZE};
 
-    let version = match buf[ptr] {
-        5 => 0x5,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse request data")),
-    };
+const VERSION: u8 = 5;
 
-    march!(ptr, 1);
-
-    let command = match buf[ptr] {
-        1 => Command::CONNECT,
-        2 => Command::BIND,
-        3 => Command::UDPASSOCIATE,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse request data")),
+pub async fn parse<IO>(mut stream: IO) -> Result<Request>
+    where
+        IO: AsyncRead + AsyncWrite + Unpin
+{
+    // Read version number
+    let version = match stream.read_u8().await? {
+        VERSION => VERSION,
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported version number")),
     };
 
-    march!(ptr, 1);
-
-    let rsv = buf[ptr];
-
-    march!(ptr, 1);
-
-    let atype = match buf[ptr] {
-        1 => AType::IPv4,
-        3 => AType::DOMAINNAME,
-        4 => AType::IPv6,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse request data")),
+    // Read command byte
+    let command = match stream.read_u8().await? {
+        CONNECT => CONNECT,
+        BIND => BIND,
+        UDP => UDP,
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported command"))
     };
 
-    march!(ptr, 1);
+    // Don't do anything about rsv
+    let rsv = stream.read_u8().await?;
 
-    let dest_addr = match atype {
-        AType::IPv4 => IPv4Addr::new(buf, ptr),
-        AType::DOMAINNAME => DomainName::new(buf, ptr),
-        AType::IPv6 => IPv6Addr::new(buf, ptr),
+    // Read address type
+    let atype = match stream.read_u8().await? {
+        ATYPE_IPV4 => ATYPE_IPV4,
+        ATYPE_DOMAIN_NAME => ATYPE_DOMAIN_NAME,
+        ATYPE_IPV6 => ATYPE_IPV6,
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported address type"))
     };
 
-    match atype {
-        AType::IPv4 => march!(ptr, 4),
-        AType::DOMAINNAME => march!(ptr, 256),
-        AType::IPv6 => march!(ptr, 16),
-    }
+    // Read the actual address, don't support domain name for now
+    let addr = match atype {
+        ATYPE_IPV4 => {
+            let mut buf = [0u8; IPV4_SIZE];
+            stream.read_exact(&mut buf).await?;
+            IpAddress::IpAddr(IpAddr::V4(Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3])))
+        },
+        ATYPE_IPV6 => {
+            let mut buf = [0u8; IPV6_SIZE];
+            stream.read_exact(&mut buf).await?;
+            IpAddress::IpAddr(IpAddr::V6(Ipv6Addr::new(
+                u16::from_be_bytes([buf[0], buf[1]]), 
+                u16::from_be_bytes([buf[2], buf[3]]), 
+                u16::from_be_bytes([buf[4], buf[5]]), 
+                u16::from_be_bytes([buf[6], buf[7]]), 
+                u16::from_be_bytes([buf[8], buf[9]]), 
+                u16::from_be_bytes([buf[10], buf[11]]), 
+                u16::from_be_bytes([buf[12], buf[13]]), 
+                u16::from_be_bytes([buf[14], buf[15]])
+            )))
+        }
+        // Temporarily not supporting domain name
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported address type"))
+    };
 
-    let dest_port = u16::from_be_bytes([buf[ptr], buf[ptr + 1]]);
+    // Read port number
+    let port = stream.read_u16().await?;
 
-    march!(ptr, 2);
-
-    let request = Request::new(version, command, rsv, atype, dest_addr, dest_port);
+    let request = Request::new(version, command, rsv, atype, port, addr);
 
     return Ok(request);
 }

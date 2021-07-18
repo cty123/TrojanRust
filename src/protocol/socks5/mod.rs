@@ -1,3 +1,3 @@
 pub mod parser;
 pub mod base;
-pub mod stream;
+pub mod inbound;

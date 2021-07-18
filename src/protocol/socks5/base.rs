@@ -1,26 +1,14 @@
-use std::fmt::{Display, Formatter, Result};
-use crate::protocol::common::packet::Packet;
-use std::convert::TryInto;
+use bytes::{BufMut, BytesMut};
 
-pub enum Command {
-    CONNECT = 1,
-    BIND = 2,
-    UDPASSOCIATE = 3,
-}
-
-pub enum AType {
-    IPv4 = 1,
-    DOMAINNAME = 3,
-    IPv6 = 4,
-}
+use crate::protocol::common::addr::IpAddress;
 
 pub struct Request {
     version: u8,
-    command: Command,
+    command: u8,
     rsv: u8,
-    atype: AType,
-    dest_addr: String,
-    dest_port: u16,
+    atype: u8,
+    addr: IpAddress,
+    port: u16,
 }
 
 pub struct ClientHello {
@@ -40,37 +28,13 @@ pub struct RequestAck {
     rep: u8,
     rsv: u8,
     atype: u8,
-    // Assume for now that we only use IPv4 for server
-    bind_addr: [u8; 4],
-    bind_port: [u8; 2],
-}
-
-impl Display for Command {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        match self {
-            Command::CONNECT => write!(f, "CONNECT"),
-            Command::BIND => write!(f, "BIND"),
-            Command::UDPASSOCIATE => write!(f, "UDPASSOCIATE"),
-        }
-    }
-}
-
-impl Display for AType {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        match self {
-            AType::IPv4 => write!(f, "ipv4"),
-            AType::DOMAINNAME => write!(f, "domain"),
-            AType::IPv6 => write!(f, "ipv6"),
-        }
-    }
+    addr: IpAddress,
+    port: u16,
 }
 
 impl ServerHello {
     pub fn new(version: u8, method: u8) -> ServerHello {
-        return ServerHello {
-            version,
-            method,
-        };
+        return ServerHello { version, method };
     }
 
     pub fn to_bytes(&self) -> [u8; 2] {
@@ -79,54 +43,56 @@ impl ServerHello {
 }
 
 impl RequestAck {
-    pub fn new(version: u8, rep: u8, rsv: u8, atype: u8, bind_addr: [u8; 4], bind_port: [u8; 2]) -> RequestAck {
+    pub fn new(version: u8, rep: u8, rsv: u8, atype: u8, addr: IpAddress, port: u16) -> RequestAck {
         return RequestAck {
             version,
             rep,
             rsv,
             atype,
-            bind_addr,
-            bind_port,
+            addr,
+            port,
         };
     }
 
-    pub fn to_bytes(&self) -> [u8; 10] {
-        return [self.version, self.rep, self.rsv, 1,
-            self.bind_addr[0], self.bind_addr[1], self.bind_addr[2], self.bind_addr[3],
-            self.bind_port[0], self.bind_port[1]];
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = BytesMut::with_capacity(128);
+        buf.put_slice(&[self.version, self.rep, self.rsv, 1]);
+        buf.put_slice(&self.addr.to_bytes());
+        buf.put_u16(self.port);
+        return buf.to_vec();
     }
 }
 
 impl Request {
     pub fn new(
         version: u8,
-        command: Command,
+        command: u8,
         rsv: u8,
-        atype: AType,
-        dest_addr: String,
-        dest_port: u16,
+        atype: u8,
+        port: u16,
+        addr: IpAddress,
     ) -> Request {
         return Request {
             version,
             command,
             rsv,
             atype,
-            dest_addr,
-            dest_port,
+            port,
+            addr,
         };
     }
 
     pub fn request_addr_port(&self) -> String {
-        return format!("{}:{}", self.dest_addr, self.dest_port);
+        return format!("{}:{}", self.addr.to_string(), self.port);
     }
 
     pub fn dump_request(&self) -> String {
-        return format!(
-            "[{} {}::{}:{}]",
-            self.command.to_string(),
-            self.atype.to_string(),
-            self.dest_addr,
-            self.dest_port
-        );
+        let command = match self.command {
+            1 => "Connect",
+            2 => "Bind",
+            3 => "UDP Associate",
+            _ => "Unsupported",
+        };
+        return format!("[{} => {}:{}]", command, self.addr, self.port);
     }
 }

@@ -1,45 +1,61 @@
 use log::{info, warn};
-use tokio::net::TcpListener;
-use rustls::internal::pemfile::{certs, rsa_private_keys, pkcs8_private_keys};
+use tokio::net::{TcpListener, UdpSocket};
+use rustls::internal::pemfile::{certs, pkcs8_private_keys};
 use std::io::BufReader;
 use std::fs::File;
 use std::io;
 use rustls::{NoClientAuth, ServerConfig, Certificate, PrivateKey};
 use tokio_rustls::TlsAcceptor;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 mod transport;
 mod protocol;
 mod config;
 mod application;
+mod infra;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize configurations
     env_logger::init();
-    info!("Starting Rust-proxy at 127.0.0.1:8080");
+    info!("Starting Rust-proxy at {}", "127.0.0.1:8080");
 
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let listener = TcpListener::bind("0.0.0.0:8080").await?;
 
     // TLS
-    let config = setup_certificate("./cert/test.crt", "./cert/test.key").unwrap();
-    let acceptor = TlsAcceptor::from(Arc::new(config));
+    // let config = setup_certificate("./cert/test.crt", "./cert/test.key").unwrap();
+    // let acceptor = TlsAcceptor::from(Arc::new(config));
 
     loop {
-        let (socket, _) = listener.accept().await?;
-        let acceptor = acceptor.clone();
+        let (mut socket, _) = listener.accept().await?;
+        // let acceptor = acceptor.clone();
 
         tokio::spawn(async move {
-            match transport::tcp::dispatch(socket, acceptor, "socks5").await {
-                Ok(_) => {
-                    info!("Finished processing socket");
-                },
-                Err(e) => {
-                    warn!("Error in dispatching the TCP socket: {}", e);
-                }
-            }
+            // if true {
+            //     let stream = match acceptor.accept(socket).await {
+            //         Ok(stream) => stream,
+            //         Err(_) => return
+            //     };
+            //     dispatch(stream).await;
+            // } else {
+                dispatch(socket).await;
+            // }
         });
+    }
+}
+
+async fn dispatch<IO>(socket: IO)
+    where IO: AsyncRead + AsyncWrite + Unpin
+{
+    match transport::tcp::dispatch(socket, "server").await {
+        Ok(_) => {
+            info!("Finished processing socket");
+        }
+        Err(e) => {
+            warn!("Error in dispatching the TCP socket: {}", e);
+        }
     }
 }
 
