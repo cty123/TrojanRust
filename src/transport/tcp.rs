@@ -45,7 +45,7 @@ pub async fn dispatch<IO>(mut inbound_stream: IO, mode: &str) -> Result<(), Erro
         info!("Dialing tcp {}", request.request_addr_port());
         let connection = TcpStream::connect(&request.request_addr_port()).await?;
         // let mut connection = dial(request.request_addr_port()).await?;
-        let outbound_stream = DirectStream::new(connection, false);
+        let outbound_stream = DirectStream::new(connection);
 
         let (mut source_read, mut source_write) = tokio::io::split(inbound_stream);
         let (mut target_read, mut target_write) = tokio::io::split(outbound_stream);

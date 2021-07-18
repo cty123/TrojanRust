@@ -1,5 +1,4 @@
-use std::net::IpAddr;
-use bytes::{BytesMut, BufMut};
+use bytes::{BufMut, BytesMut};
 
 use crate::protocol::common::addr::IpAddress;
 
@@ -35,10 +34,7 @@ pub struct RequestAck {
 
 impl ServerHello {
     pub fn new(version: u8, method: u8) -> ServerHello {
-        return ServerHello {
-            version,
-            method,
-        };
+        return ServerHello { version, method };
     }
 
     pub fn to_bytes(&self) -> [u8; 2] {
@@ -91,20 +87,12 @@ impl Request {
     }
 
     pub fn dump_request(&self) -> String {
-        return format!(
-            "[{} => {}:{}]",
-            self.get_command(),
-            self.addr.to_string(),
-            self.port
-        );
-    }
-
-    fn get_command(&self) -> &str {
-        return match self.command {
+        let command = match self.command {
             1 => "Connect",
             2 => "Bind",
             3 => "UDP Associate",
-            _ => "Unsupported"
-        }
+            _ => "Unsupported",
+        };
+        return format!("[{} => {}:{}]", command, self.addr, self.port);
     }
 }

@@ -1,5 +1,5 @@
-use std::net::IpAddr;
 use std::fmt::{self};
+use std::net::IpAddr;
 
 pub const IPV4_SIZE: usize = 4;
 pub const IPV6_SIZE: usize = 16;
@@ -11,12 +11,12 @@ pub const ATYPE_DOMAIN_NAME: u8 = 3;
 
 pub enum IpAddress {
     IpAddr(IpAddr),
-    Domain(DomainName)
+    Domain(DomainName),
 }
 
 pub struct DomainName {
     inner: [u8; 256],
-    size: usize
+    size: usize,
 }
 
 impl fmt::Display for DomainName {
@@ -30,7 +30,7 @@ impl fmt::Display for IpAddress {
         match self {
             IpAddress::IpAddr(IpAddr::V4(ip)) => ip.fmt(fmt),
             IpAddress::IpAddr(IpAddr::V6(ip)) => ip.fmt(fmt),
-            IpAddress::Domain(domain) => domain.fmt(fmt)
+            IpAddress::Domain(domain) => domain.fmt(fmt),
         }
     }
 }
@@ -40,7 +40,7 @@ impl IpAddress {
         match self {
             IpAddress::IpAddr(IpAddr::V4(ip)) => ip.octets().to_vec(),
             IpAddress::IpAddr(IpAddr::V6(ip)) => ip.octets().to_vec(),
-            IpAddress::Domain(domain) => domain.inner[..domain.size].to_vec()
+            IpAddress::Domain(domain) => domain.inner[..domain.size].to_vec(),
         }
     }
 }
