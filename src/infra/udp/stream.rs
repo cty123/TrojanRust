@@ -14,8 +14,6 @@ use std::pin::Pin;
 use tokio::net::{UdpSocket, ToSocketAddrs};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use portpicker;
-
 pub struct UdpStream {
     io: UdpSocket,
 }

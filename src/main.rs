@@ -1,62 +1,61 @@
 use log::{info, warn};
-use tokio::net::{TcpListener, UdpSocket};
-use rustls::internal::pemfile::{certs, pkcs8_private_keys};
+
 use std::io::BufReader;
 use std::fs::File;
 use std::io;
-use rustls::{NoClientAuth, ServerConfig, Certificate, PrivateKey};
-use tokio_rustls::TlsAcceptor;
-use std::sync::Arc;
+
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::{TcpListener, UdpSocket};
+use rustls::internal::pemfile::{certs, pkcs8_private_keys};
+use rustls::{NoClientAuth, ServerConfig, Certificate, PrivateKey};
+
+use crate::proxy::base::SupportedProtocols;
+
+// use tokio_rustls::TlsAcceptor;
+// use std::sync::Arc;
 
 mod transport;
 mod protocol;
 mod config;
-mod application;
 mod infra;
+mod proxy;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
 
     // Initialize configurations
     env_logger::init();
     info!("Starting Rust-proxy at {}", "127.0.0.1:8080");
 
-    let listener = TcpListener::bind("0.0.0.0:8080").await?;
+    let server = proxy::tcp_server::TcpServer::new(8080, String::from("127.0.0.1"), SupportedProtocols::SOCKS, SupportedProtocols::DIRECT);
+
+    match server.start().await {
+        Err(e) => info!("Server failure: {}", e.to_string()),
+        Ok(()) => info!("Finished running server, exiting...")
+    }
+
+    // let listener = TcpListener::bind("0.0.0.0:8080").await?;
 
     // TLS
     // let config = setup_certificate("./cert/test.crt", "./cert/test.key").unwrap();
     // let acceptor = TlsAcceptor::from(Arc::new(config));
 
-    loop {
-        let (mut socket, _) = listener.accept().await?;
-        // let acceptor = acceptor.clone();
+    // loop {
+    //     let (mut socket, _) = listener.accept().await?;
+    //     // let acceptor = acceptor.clone();
 
-        tokio::spawn(async move {
-            // if true {
-            //     let stream = match acceptor.accept(socket).await {
-            //         Ok(stream) => stream,
-            //         Err(_) => return
-            //     };
-            //     dispatch(stream).await;
-            // } else {
-                dispatch(socket).await;
-            // }
-        });
-    }
-}
-
-async fn dispatch<IO>(socket: IO)
-    where IO: AsyncRead + AsyncWrite + Unpin
-{
-    match transport::tcp::dispatch(socket, "server").await {
-        Ok(_) => {
-            info!("Finished processing socket");
-        }
-        Err(e) => {
-            warn!("Error in dispatching the TCP socket: {}", e);
-        }
-    }
+    //     tokio::spawn(async move {
+    //         // if true {
+    //         //     let stream = match acceptor.accept(socket).await {
+    //         //         Ok(stream) => stream,
+    //         //         Err(_) => return
+    //         //     };
+    //         //     dispatch(stream).await;
+    //         // } else {
+    //             dispatch(socket).await;
+    //         // }
+    //     });
+    // }
 }
 
 fn setup_certificate(cert_path: &str, key_path: &str) -> Result<ServerConfig, String> {

@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use log::{debug, error, info};
 
 use std::io::Result;
@@ -8,6 +9,7 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
 
 use crate::protocol::common::addr::IpAddress;
+use crate::protocol::common::stream::InboundStream;
 use crate::protocol::socks5::base::{Request, RequestAck, ServerHello};
 use crate::protocol::socks5::parser;
 
@@ -18,13 +20,13 @@ pub struct Socks5InboundStream<IO> {
 
 impl<IO> Socks5InboundStream<IO>
 where
-    IO: AsyncRead + AsyncWrite + Unpin,
+    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    pub fn new(stream: IO, port: u16) -> Socks5InboundStream<IO> {
-        Socks5InboundStream {
+    pub fn new(stream: IO, port: u16) -> Box<dyn InboundStream> {
+        Box::new(Socks5InboundStream {
             stream: BufReader::with_capacity(1024, stream),
             port,
-        }
+        })
     }
 }
 
@@ -62,11 +64,12 @@ where
     }
 }
 
-impl<IO> Socks5InboundStream<IO>
+#[async_trait]
+impl<IO> InboundStream for Socks5InboundStream<IO>
 where
-    IO: AsyncRead + AsyncWrite + Unpin,
+    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    pub async fn handshake(&mut self) -> Result<Request> {
+    async fn handshake(&mut self) -> Result<String> {
         // Read and reply for the initial client/server hello messages
         if let Err(e) = self.init_ack().await {
             return Err(e);
@@ -85,9 +88,14 @@ where
             return Err(e);
         }
 
-        Ok(request)
+        Ok(request.request_addr_port())
     }
+}
 
+impl<IO> Socks5InboundStream<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
     async fn init_ack(&mut self) -> Result<()> {
         let mut buf = [0; 32];
 
