@@ -1,81 +1,79 @@
-use log::{info, warn};
+use log::{error, info};
 
-use std::io::BufReader;
-use std::fs::File;
-use std::io;
+use std::io::{Error, ErrorKind, Result};
 
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::{TcpListener, UdpSocket};
-use rustls::internal::pemfile::{certs, pkcs8_private_keys};
-use rustls::{NoClientAuth, ServerConfig, Certificate, PrivateKey};
+use clap::{App, Arg, SubCommand};
 
-use crate::proxy::base::SupportedProtocols;
+// use crate::proxy::base::SupportedProtocols;
 
-// use tokio_rustls::TlsAcceptor;
-// use std::sync::Arc;
-
-mod transport;
-mod protocol;
 mod config;
 mod infra;
+mod protocol;
 mod proxy;
+mod transport;
 
 #[tokio::main]
-async fn main() {
-
-    // Initialize configurations
+async fn main() -> Result<()> {
     env_logger::init();
-    info!("Starting Rust-proxy at {}", "127.0.0.1:8080");
 
-    let server = proxy::tcp_server::TcpServer::new(8080, String::from("127.0.0.1"), SupportedProtocols::SOCKS, SupportedProtocols::DIRECT);
+    let matches = App::new("Rust Proxy")
+        .version("1.0.0")
+        .author("Anonymous")
+        .about("Rust proxy")
+        .arg(
+            Arg::with_name("config")
+                .short("c")
+                .long("config")
+                .value_name("FILE")
+                .help("Sets a custom config file")
+                .takes_value(true),
+        )
+        .get_matches();
 
-    match server.start().await {
-        Err(e) => info!("Server failure: {}", e.to_string()),
-        Ok(()) => info!("Finished running server, exiting...")
-    }
+    let config_path = matches.value_of("config").unwrap_or("./config.json");
 
-    // let listener = TcpListener::bind("0.0.0.0:8080").await?;
+    info!("Parsing Rust-proxy configuration from {}", config_path);
 
-    // TLS
-    // let config = setup_certificate("./cert/test.crt", "./cert/test.key").unwrap();
-    // let acceptor = TlsAcceptor::from(Arc::new(config));
+    let config = match config::parser::reader_config(config_path) {
+        Ok(config) => config,
+        Err(e) => {
+            error!("Failed to load config file, {}", e);
+            return Err(Error::new(ErrorKind::InvalidInput, e));
+        }
+    };
 
-    // loop {
-    //     let (mut socket, _) = listener.accept().await?;
-    //     // let acceptor = acceptor.clone();
+    // let mut cfg = rustls::ServerConfig::new(rustls::NoClientAuth::new());
+    // info!("Starting Rust-proxy at {}", "127.0.0.1:8080");
 
-    //     tokio::spawn(async move {
-    //         // if true {
-    //         //     let stream = match acceptor.accept(socket).await {
-    //         //         Ok(stream) => stream,
-    //         //         Err(_) => return
-    //         //     };
-    //         //     dispatch(stream).await;
-    //         // } else {
-    //             dispatch(socket).await;
-    //         // }
-    //     });
+    let server = proxy::tcp_server::TcpServer::new(config.inbound, config.outbound);
+
+    // match server.start().await {
+    //     Err(e) => info!("Server failure: {}", e.to_string()),
+    //     Ok(()) => info!("Finished running server, exiting..."),
     // }
+
+    Ok(())
 }
 
-fn setup_certificate(cert_path: &str, key_path: &str) -> Result<ServerConfig, String> {
-    let certs = load_certs(cert_path).unwrap();
-    let mut keys = load_keys(key_path).unwrap();
+// fn setup_certificate(cert_path: &str, key_path: &str) -> Result<ServerConfig, String> {
+//     let certs = load_certs(cert_path).unwrap();
+//     let mut keys = load_keys(key_path).unwrap();
 
-    let mut config = ServerConfig::new(NoClientAuth::new());
-    config.set_single_cert(certs, keys.remove(0))
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))
-        .unwrap();
+//     let mut config = ServerConfig::new(NoClientAuth::new());
+//     config
+//         .set_single_cert(certs, keys.remove(0))
+//         .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))
+//         .unwrap();
 
-    Ok(config)
-}
+//     Ok(config)
+// }
 
-fn load_certs(path: &str) -> io::Result<Vec<Certificate>> {
-    certs(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
-}
+// fn load_certs(path: &str) -> io::Result<Vec<Certificate>> {
+//     certs(&mut BufReader::new(File::open(path)?))
+//         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
+// }
 
-fn load_keys(path: &str) -> io::Result<Vec<PrivateKey>> {
-    pkcs8_private_keys(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
-}
+// fn load_keys(path: &str) -> io::Result<Vec<PrivateKey>> {
+//     pkcs8_private_keys(&mut BufReader::new(File::open(path)?))
+//         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
+// }
