@@ -20,10 +20,11 @@ Trojan-rust is a rust implementation for [Trojan protocol](https://trojan-gfw.gi
 
 ## Create Certificate
 Quick short script for your convenience,
-> openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+    
+    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
 
 ## Sample config file
-```
+```json
 {
     "inbound": {
         "protocol": "SOCKS",
@@ -60,9 +61,9 @@ OPTIONS:
 ```
 
 Run trojan-rust with specified config file
-```
-trojan-rust --config ./config.json
-```
+
+    trojan-rust --config ./config.json
+
 
 # Roadmap
 
