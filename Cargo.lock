@@ -604,29 +604,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-proxy"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "byteorder",
- "bytes",
- "clap",
- "env_logger",
- "futures",
- "itertools",
- "log",
- "portpicker",
- "rustls",
- "serde",
- "serde_json",
- "tokio",
- "tokio-rustls",
- "tokio-stream",
- "tokio-util",
- "webpki-roots",
-]
-
-[[package]]
 name = "rustls"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -821,6 +798,29 @@ dependencies = [
  "pin-project-lite",
  "slab",
  "tokio",
+]
+
+[[package]]
+name = "trojan-rust"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "byteorder",
+ "bytes",
+ "clap",
+ "env_logger",
+ "futures",
+ "itertools",
+ "log",
+ "portpicker",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tokio-util",
+ "webpki-roots",
 ]
 
 [[package]]

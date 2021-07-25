@@ -1,6 +1,6 @@
 [package]
-name = "rust-proxy"
-version = "0.1.0"
+name = "trojan-rust"
+version = "0.0.1"
 authors = ["ctydw"]
 edition = "2018"
 

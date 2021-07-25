@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::proxy::base::SupportedProtocols;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct InboundConfig {
     pub address: String,
     pub port: u16,
@@ -12,7 +12,7 @@ pub struct InboundConfig {
     pub key_path: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct OutboundConfig {
     pub address: Option<String>,
     pub port: Option<u16>,

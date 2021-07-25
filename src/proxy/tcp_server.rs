@@ -1,85 +1,100 @@
-use log::{info, warn};
+use log::{error, info};
 
 use std::io::{Error, ErrorKind, Result};
+use std::sync::Arc;
 
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 
+use rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
+
 use crate::config::base::{InboundConfig, OutboundConfig};
-use crate::config::tls::{load_certs, load_private_key};
+use crate::config::tls::get_tls_config;
+use crate::protocol::common::stream::InboundStream;
 use crate::proxy::acceptor::Acceptor;
+use crate::proxy::base::SupportedProtocols;
 use crate::proxy::handler::Handler;
 
 pub struct TcpServer {
-    local_port: u16,
     local_addr: String,
-    inbound_tls: bool,
-    outbound_tls: bool,
-    acceptor: Acceptor,
+    local_port: u16,
+    protocol: SupportedProtocols,
+    tls_config: Option<Arc<ServerConfig>>,
     handler: Handler,
 }
 
 impl TcpServer {
-    pub fn new(inbound: InboundConfig, outbound: OutboundConfig) -> Result<TcpServer> {
-        let acceptor = Acceptor::new(inbound.protocol);
+    pub fn new(
+        inbound_config: InboundConfig,
+        outbound_config: OutboundConfig,
+    ) -> Result<TcpServer> {
+        let tls_config = match inbound_config.tls {
+            true if inbound_config.cert_path.is_some() && inbound_config.key_path.is_some() => {
+                Some(get_tls_config(
+                    &inbound_config.cert_path.unwrap(),
+                    &inbound_config.key_path.unwrap(),
+                )?)
+            }
+            true => {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    "missing tls certificate path or tls private key path",
+                ))
+            }
+            false => None,
+        };
+
         let handler = Handler::new();
 
-        let certificates = load_certs(&inbound.cert_path.unwrap())?;
-        let key = load_private_key(&inbound.key_path.unwrap())?;
-
-        return TcpServer {
-            local_port: inbound.port,
-            local_addr: inbound.address,
-            acceptor,
+        return Ok(TcpServer {
+            local_addr: inbound_config.address,
+            local_port: inbound_config.port,
+            protocol: inbound_config.protocol,
+            tls_config,
             handler,
-        };
+        });
     }
 
-    pub async fn start(&self) -> Result<()> {
+    pub async fn start(self) -> Result<()> {
         let listener =
             TcpListener::bind(format!("{}:{}", self.local_addr, self.local_port)).await?;
 
-        let local_port = self.local_port;
+        let acceptor = match self.tls_config {
+            Some(config) => Acceptor::new(
+                self.protocol,
+                self.local_port,
+                Some(TlsAcceptor::from(config)),
+            ),
+            None => Acceptor::new(self.protocol, self.local_port, None),
+        };
 
         info!(
-            "TCP server started on port {}, ready to accept input stream",
-            local_port
+            "TCP server started on {}:{}, ready to accept input stream",
+            self.local_addr, self.local_port
         );
 
         loop {
             let (socket, _) = listener.accept().await?;
+            let mut inbound_stream = acceptor.accept(socket).await?;
 
-            let acceptor = self.acceptor.clone();
             let handler = self.handler.clone();
 
             tokio::spawn(async move {
-                match TcpServer::dispatch(socket, local_port, acceptor, handler).await {
-                    Ok(()) => (),
-                    Err(e) => warn!("Failed to handle the inbound stream: {}", e),
+                match TcpServer::dispatch(&mut inbound_stream, handler).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        error!("Failed to handle the inbound stream: {}", e);
+                        return Err(e);
+                    }
                 }
             });
         }
     }
 
-    async fn dispatch<IO>(
-        inbound_stream: IO,
-        inbound_port: u16,
-        inbound_acceptor: Acceptor,
+    async fn dispatch(
+        inbound_stream: &mut Box<dyn InboundStream>,
         outbound_handler: Handler,
-    ) -> Result<()>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
-    {
-        let mut inbound_stream = match inbound_acceptor.accept(inbound_stream, inbound_port) {
-            Some(stream) => stream,
-            None => {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    "Unable to accept the inbound stream",
-                ))
-            }
-        };
-
+    ) -> Result<()> {
         let request = inbound_stream.handshake().await?;
 
         let outbound_stream = match outbound_handler.handle(request).await {
