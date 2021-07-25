@@ -1,6 +1,6 @@
 # trojan-rust
 
-Trojan-rust is a rust implementation for [Trojan protocol](https://trojan-gfw.github.io/trojan/protocol.html) that is targeted to by circumvent [GFW](https://en.wikipedia.org/wiki/Great_Firewall). This implementation focus on performance and stability above everything else.
+Trojan-rust is a rust implementation for [Trojan protocol](https://trojan-gfw.github.io/trojan/protocol.html) that is targeted to circumvent [GFW](https://en.wikipedia.org/wiki/Great_Firewall). This implementation focus on performance and stability above everything else.
 
 # Why trojan-rust
 
