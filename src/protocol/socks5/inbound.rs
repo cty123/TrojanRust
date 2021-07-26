@@ -1,12 +1,12 @@
-use async_trait::async_trait;
-use log::{debug, error, info};
-
 use std::io::Result;
 use std::net::{IpAddr, Ipv4Addr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
+
+use async_trait::async_trait;
+use log::{debug, error, info};
 
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::stream::InboundStream;

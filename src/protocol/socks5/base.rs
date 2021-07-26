@@ -82,10 +82,12 @@ impl Request {
         };
     }
 
+    #[inline]
     pub fn request_addr_port(&self) -> String {
         return format!("{}:{}", self.addr.to_string(), self.port);
     }
 
+    #[inline]
     pub fn dump_request(&self) -> String {
         let command = match self.command {
             1 => "Connect",
