@@ -1,6 +1,6 @@
 # trojan-rust
 
-![Build](https://github.com/cty123/TrojanRust/actions/workflows/build.yml/badge.svg) ![publish](https://github.com/cty123/TrojanRust/actions/workflows/publish.yml/badge.svg) ![Version](https://img.shields.io/badge/Version_0.0.1-blue.svg) ![Stage](https://img.shields.io/badge/beta-blue.svg)
+![Build](https://github.com/cty123/TrojanRust/actions/workflows/build.yml/badge.svg) ![publish](https://github.com/cty123/TrojanRust/actions/workflows/publish.yml/badge.svg) ![Version](https://img.shields.io/badge/Version_0.1.0-blue.svg) ![Stage](https://img.shields.io/badge/beta-blue.svg)
 
 Trojan-rust is a rust implementation for [Trojan protocol](https://trojan-gfw.github.io/trojan/protocol.html) that is targeted to circumvent [GFW](https://en.wikipedia.org/wiki/Great_Firewall). This implementation focus on performance and stability above everything else.
 
@@ -70,9 +70,9 @@ Run trojan-rust with specified config file
 ## Beta stage 0.0.1 - 1.0.0
 - [x] Build up the framework for this project and support basic server side SOCKS5 protocol.
 
-- [ ] Support server side Trojan protocol for handling Trojan traffic - Work In Progress, ETA July.31.
+- [x] Support server side Trojan protocol for handling Trojan traffic.
 
-- [ ] Implement client side Trojan protocol so that Trojan rs and be used as an client for using Trojan.
+- [ ] Implement client side Trojan protocol so that trojan-rust and be used as an client for using Trojan. - Work in progress.
 
 - [ ] Implement UDP over TCP for Trojan protocol on both client side and server side.
 
