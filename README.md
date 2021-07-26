@@ -14,6 +14,27 @@ Trojan-rust is a rust implementation for [Trojan protocol](https://trojan-gfw.gi
 
 * Easy to use/configure. Make this project beginner friendly, minimize the amount of configurations one needs to write.
 
+# How to compile
+
+Currently there is no existing binary file that you can just download and use, and it is recommanded to compile and build yourself. To do so, first you need to set up the Rust environment, by installing through here https://www.rust-lang.org/. Once you have rust installed, you can simply go to command line and run,
+
+    cargo build --release
+
+and it should generate a binary program under ./target/release/trojan-rust. 
+
+Alternatively, you can also run it directly through,
+
+    cargo run --release
+
+To enable logs, on MacOs or Linux, run,
+
+    RUST_LOG=info cargo run --release
+
+On windows powershell, run,
+
+    $Env:RUST_LOG = "info"
+    cargo run --release
+
 # Examples
 
 
