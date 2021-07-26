@@ -2,7 +2,8 @@
 
 ![Build](https://github.com/cty123/TrojanRust/actions/workflows/build.yml/badge.svg) ![publish](https://github.com/cty123/TrojanRust/actions/workflows/publish.yml/badge.svg) ![Version](https://img.shields.io/badge/Version_0.1.0-blue.svg) ![Stage](https://img.shields.io/badge/beta-blue.svg)
 
-[中文](https://github.com/cty123/TrojanRust/README.zh-CN.md)
+[中文](https://github.com/cty123/TrojanRust/blob/main/README.zh-CN.md)
+
 Trojan-rust is a rust implementation for [Trojan protocol](https://trojan-gfw.github.io/trojan/protocol.html) that is targeted to circumvent [GFW](https://en.wikipedia.org/wiki/Great_Firewall). This implementation focus on performance and stability above everything else.
 
 # Why trojan-rust
