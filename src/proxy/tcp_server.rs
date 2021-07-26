@@ -81,7 +81,10 @@ impl TcpServer {
 
             tokio::spawn(async move {
                 match TcpServer::dispatch(&mut inbound_stream, handler).await {
-                    Ok(_) => Ok(()),
+                    Ok(_) => {
+                        info!("Connection finished");
+                        Ok(())
+                    },
                     Err(e) => {
                         error!("Failed to handle the inbound stream: {}", e);
                         return Err(e);
