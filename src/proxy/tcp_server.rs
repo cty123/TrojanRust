@@ -75,6 +75,7 @@ impl TcpServer {
 
         loop {
             let (socket, _) = listener.accept().await?;
+            let acceptor = acceptor.clone();
             let mut inbound_stream = acceptor.accept(socket).await?;
 
             let handler = self.handler.clone();
