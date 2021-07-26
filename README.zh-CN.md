@@ -47,7 +47,7 @@ Trojan-rust 是一个[Trojan协议](https://trojan-gfw.github.io/trojan/protocol
 ```json
 {
     "inbound": {
-        "protocol": "SOCKS",
+        "protocol": "SOCKS" || "TROJAN",
         "address": "0.0.0.0",
         "port": 8081,
         "tls": true,
