@@ -50,7 +50,7 @@ Quick short script for your convenience,
 ```json
 {
     "inbound": {
-        "protocol": "SOCKS",
+        "protocol": "SOCKS" || "TROJAN",
         "address": "0.0.0.0",
         "port": 8081,
         "tls": true,
