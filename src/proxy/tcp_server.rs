@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{error, info, warn};
 
 use std::io::{Error, ErrorKind, Result};
 use std::sync::Arc;
@@ -76,7 +76,14 @@ impl TcpServer {
         loop {
             let (socket, _) = listener.accept().await?;
             let acceptor = acceptor.clone();
-            let mut inbound_stream = acceptor.accept(socket).await?;
+
+            let mut inbound_stream = match acceptor.accept(socket).await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    warn!("Failed to escalate to TLS protocol, {}", e);
+                    continue;
+                }
+            };
 
             let handler = self.handler.clone();
 
@@ -85,7 +92,7 @@ impl TcpServer {
                     Ok(_) => {
                         info!("Connection finished");
                         Ok(())
-                    },
+                    }
                     Err(e) => {
                         error!("Failed to handle the inbound stream: {}", e);
                         return Err(e);

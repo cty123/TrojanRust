@@ -10,11 +10,12 @@ use rustls::{Certificate, NoClientAuth, PrivateKey, ServerConfig};
 pub fn get_tls_config(cert_path: &str, key_path: &str) -> Result<Arc<ServerConfig>> {
     let certificates = load_certs(cert_path)?;
     let key = load_private_key(key_path)?;
-
     let mut cfg = rustls::ServerConfig::new(NoClientAuth::new());
-    cfg.set_single_cert(certificates, key);
 
-    Ok(Arc::new(cfg))
+    return match cfg.set_single_cert(certificates, key) {
+        Ok(_) => Ok(Arc::new(cfg)),
+        Err(e) => Err(Error::new(ErrorKind::InvalidData, e)),
+    };
 }
 
 fn load_certs(path: &str) -> Result<Vec<Certificate>> {

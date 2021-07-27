@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     };
 
     match server.start().await {
-        Err(e) => info!("Server failure: {}", e.to_string()),
+        Err(e) => info!("Server failure: {}, graceful shutdown", e.to_string()),
         Ok(()) => info!("Finished running server, exiting..."),
     }
 
