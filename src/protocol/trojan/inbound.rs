@@ -2,11 +2,11 @@ use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tokio::io::{AsyncRead, AsyncWrite, BufReader, ReadBuf};
-
 use async_trait::async_trait;
 use log::info;
+use tokio::io::{AsyncRead, AsyncWrite, BufReader, ReadBuf};
 
+use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::InboundStream;
 use crate::protocol::trojan::parser::parse;
 
@@ -57,10 +57,10 @@ impl<IO> InboundStream for TrojanInboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin + Send + Sync,
 {
-    async fn handshake(&mut self) -> Result<String> {
+    async fn handshake(&mut self) -> Result<InboundRequest> {
         let request = parse(&mut self.stream).await?;
         info!("Received trojan request: {}", request.dump_request());
-        return Ok(request.request_addr_port());
+        return Ok(request.inbound_request());
     }
 }
 

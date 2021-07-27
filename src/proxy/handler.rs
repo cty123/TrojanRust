@@ -1,6 +1,7 @@
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
+use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::OutboundStream;
 use crate::protocol::direct::outbound::DirectOutboundStream;
 use crate::proxy::base::SupportedProtocols;
@@ -25,10 +26,10 @@ impl Handler {
     //     Handler {}
     // }
 
-    pub async fn handle(self, request: String) -> Option<Box<dyn OutboundStream>> {
+    pub async fn handle(self, request: InboundRequest) -> Option<Box<dyn OutboundStream>> {
         match self.protocol {
             SupportedProtocols::DIRECT => {
-                let connection = match TcpStream::connect(request).await {
+                let connection = match TcpStream::connect(request.addr_port()).await {
                     Ok(connection) => connection,
                     Err(_) => return None,
                 };

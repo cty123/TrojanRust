@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use log::{debug, error, info};
 
 use crate::protocol::common::addr::IpAddress;
+use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::InboundStream;
 use crate::protocol::socks5::base::{Request, RequestAck, ServerHello};
 use crate::protocol::socks5::parser;
@@ -73,7 +74,7 @@ impl<IO> InboundStream for Socks5InboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    async fn handshake(&mut self) -> Result<String> {
+    async fn handshake(&mut self) -> Result<InboundRequest> {
         // Read and reply for the initial client/server hello messages
         if let Err(e) = self.init_ack().await {
             return Err(e);
@@ -92,7 +93,7 @@ where
             return Err(e);
         }
 
-        Ok(request.request_addr_port())
+        Ok(request.inbound_request())
     }
 }
 

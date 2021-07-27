@@ -36,6 +36,7 @@ impl<IO> AsyncRead for DirectOutboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
+    #[inline]
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -49,6 +50,7 @@ impl<IO> AsyncWrite for DirectOutboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
+    #[inline]
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -57,10 +59,12 @@ where
         return Pin::new(&mut self.stream).poll_write(cx, buf);
     }
 
+    #[inline]
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         return Pin::new(&mut self.stream).poll_flush(cx);
     }
 
+    #[inline]
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         return Pin::new(&mut self.stream).poll_shutdown(cx);
     }

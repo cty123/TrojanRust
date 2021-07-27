@@ -1,9 +1,8 @@
 use bytes::{BufMut, BytesMut};
 
-// use crate::protocol::common::addr::{IPV4_SIZE, IPV6_SIZE, DOMAIN_NAME_SIZE, ATYPE_IPV4, ATYPE_IPV6, ATYPE_DOMAIN_NAME};
-// use crate::protocol::common::command::{CONNECT, UDP};
-
 use crate::protocol::common::addr::IpAddress;
+use crate::protocol::common::command::{BIND, CONNECT, UDP};
+use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 
 const CRLF: u16 = 0x0D0A;
 
@@ -64,12 +63,19 @@ impl Request {
     #[inline]
     pub fn dump_request(&self) -> String {
         let command = match self.command {
-            1 => "Connect",
-            2 => "Bind",
-            3 => "UDP Associate",
+            CONNECT => "Connect",
+            BIND => "Bind",
+            UDP => "UDP Associate",
             _ => "Unsupported",
         };
         return format!("[{} => {}]", command, self.request_addr_port());
+    }
+    #[inline]
+    pub fn inbound_request(self) -> InboundRequest {
+        return match self.command {
+            UDP => InboundRequest::new(self.addr, self.port, TransportProtocol::UDP),
+            _ => InboundRequest::new(self.addr, self.port, TransportProtocol::TCP),
+        };
     }
 }
 
