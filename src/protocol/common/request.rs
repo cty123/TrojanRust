@@ -1,6 +1,6 @@
 use crate::protocol::common::addr::IpAddress;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum TransportProtocol {
     TCP,
     UDP,
@@ -27,12 +27,12 @@ impl InboundRequest {
     }
 
     #[inline]
-    pub fn addr_port(self) -> String {
+    pub fn addr_port(&self) -> String {
         format!("{}:{}", self.addr, self.port)
     }
 
     #[inline]
-    pub fn transport_protocol(self) -> TransportProtocol {
+    pub fn transport_protocol(&self) -> TransportProtocol {
         self.transport_protocol
     }
 }

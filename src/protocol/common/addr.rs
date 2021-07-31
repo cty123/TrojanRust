@@ -3,7 +3,6 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 pub const IPV4_SIZE: usize = 4;
 pub const IPV6_SIZE: usize = 16;
-pub const DOMAIN_NAME_SIZE: usize = 256;
 
 pub const ATYPE_IPV4: u8 = 1;
 pub const ATYPE_IPV6: u8 = 4;

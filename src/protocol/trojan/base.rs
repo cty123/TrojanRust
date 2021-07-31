@@ -70,6 +70,7 @@ impl Request {
         };
         return format!("[{} => {}]", command, self.request_addr_port());
     }
+
     #[inline]
     pub fn inbound_request(self) -> InboundRequest {
         return match self.command {
@@ -78,48 +79,3 @@ impl Request {
         };
     }
 }
-
-//     pub fn get_command(&self) -> u8 {
-//         return self.command;
-//     }
-// }
-
-// impl UdpRequest {
-//     pub fn new(atype: u8, addr: [u8; 256], addr_len: usize, port: u16, payload: [u8; 2048],
-//                payload_size: usize) -> UdpRequest {
-//         UdpRequest {
-//             atype,
-//             addr,
-//             addr_len,
-//             port,
-//             payload,
-//             payload_size
-//         }
-//     }
-
-//     pub fn request_addr_port(&self) -> String {
-//         let addr = match self.atype {
-//             ATYPE_IPV4 => ipv4_to_string(self.addr[0..IPV4_SIZE].try_into().unwrap()),
-//             ATYPE_IPV6 => ipv6_to_string(self.addr[0..IPV6_SIZE].try_into().unwrap()),
-//             ATYPE_DOMAIN_NAME => String::from_utf8_lossy(&self.addr[0..self.addr_len]).to_string(),
-//             _ => String::from("Unknown")
-//         };
-//         return format!("{}:{}", addr, self.port);
-//     }
-
-//     pub fn dump_request(&self) -> String {
-//         let atype = match self.atype {
-//             ATYPE_IPV4 => "IPv4",
-//             ATYPE_IPV6 => "IPv6",
-//             ATYPE_DOMAIN_NAME => "DomainName",
-//             _ => "Unsupported"
-//         };
-
-//         return format!(
-//             "[{} {}::{}]",
-//             self.payload_size,
-//             atype,
-//             self.request_addr_port(),
-//         );
-//     }
-// }

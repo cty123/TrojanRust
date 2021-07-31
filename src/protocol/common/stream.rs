@@ -15,3 +15,6 @@ pub trait InboundStream: AsyncRead + AsyncWrite + Unpin + Send + Sync {
 
 #[async_trait]
 pub trait OutboundStream: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
+
+#[async_trait]
+pub trait PacketStream: AsyncRead + AsyncWrite + Unpin + Send + Sync {}

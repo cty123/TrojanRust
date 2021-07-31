@@ -59,7 +59,6 @@ where
 {
     async fn handshake(&mut self) -> Result<InboundRequest> {
         let request = parse(&mut self.stream).await?;
-        info!("Received trojan request: {}", request.dump_request());
         return Ok(request.inbound_request());
     }
 }

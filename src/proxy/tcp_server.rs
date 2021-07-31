@@ -108,14 +108,9 @@ impl TcpServer {
     ) -> Result<()> {
         let request = inbound_stream.handshake().await?;
 
-        let outbound_stream = match outbound_handler.handle(request).await {
-            Some(stream) => stream,
-            None => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionReset,
-                    "Unable to establish connection to remote",
-                ))
-            }
+        let outbound_stream = match outbound_handler.handle(&request).await {
+            Ok(stream) => stream,
+            Err(e) => return Err(e),
         };
 
         let (mut source_read, mut source_write) = tokio::io::split(inbound_stream);
