@@ -90,7 +90,7 @@ Run trojan-rust with specified config file
 
 # Roadmap
 
-## Beta stage 0.0.1 - 1.0.0
+## Beta stage 0.0.1 - 1.0.0(For developers)
 - [x] Build up the framework for this project and support basic server side SOCKS5 protocol.
 
 - [x] Support server side Trojan protocol for handling Trojan traffic.
@@ -98,10 +98,13 @@ Run trojan-rust with specified config file
 - [x] Implement UDP over TCP for Trojan protocol on server side.
 
 - [ ] Implement client side Trojan protocol so that trojan-rust and be used as a Trojan client. - Work in progress.
+    - [x] Implement client side Trojan protocol with TCP
+    - [ ] Implement client side Trojan protocol with TLS
+    - [ ] Implement client side Trojan protocol with UDP over TCP.   
 
 - [ ] Performance profiling and bottleneck resolving. Will also include benchmarks versus other implementations.
 
-## Official release 1.0.0 and above
+## Official release 1.0.0 and above(For general users)
 - [ ] Build the package into kernel module release
 
 - [ ] Support other protocols, gRPC, websocket etc.
