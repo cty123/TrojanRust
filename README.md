@@ -1,6 +1,6 @@
 # trojan-rust
 
-![Build](https://github.com/cty123/TrojanRust/actions/workflows/build.yml/badge.svg) ![publish](https://github.com/cty123/TrojanRust/actions/workflows/publish.yml/badge.svg) ![Version](https://img.shields.io/badge/Version_0.2.1-blue.svg) ![Stage](https://img.shields.io/badge/beta-blue.svg)
+![Build](https://github.com/cty123/TrojanRust/actions/workflows/build.yml/badge.svg) ![publish](https://github.com/cty123/TrojanRust/actions/workflows/publish.yml/badge.svg) ![Version](https://img.shields.io/github/v/release/cty123/TrojanRust) ![Stage](https://img.shields.io/badge/beta-blue.svg)
 
 [中文zh-CN](https://github.com/cty123/TrojanRust/blob/main/README.zh-CN.md)
 
