@@ -44,7 +44,7 @@ impl TcpServer {
             false => None,
         };
 
-        let handler = Handler::new();
+        let handler = Handler::new(outbound_config);
 
         return Ok(TcpServer {
             local_addr: inbound_config.address,
