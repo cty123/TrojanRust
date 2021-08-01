@@ -53,8 +53,35 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     needs: [build]
-    steps: 
-      - name: GH Release
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: trojan-rust-windows
+          path: ~/windows/
+      
+      - name: Download Ubuntu Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: trojan-rust-linux
+          path: ~/linux/
+          
+      - name: Download Ubuntu Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: trojan-rust-linux
+          path: ~/macos/
+      
+      - name: Rename
+        run: |
+          mv ~/windows/trojan-rust.exe ./trojan-rust-windows.exe
+          mv ~/linux/trojan-rust ./trojan-rust-linux
+          mv ~/macos/trojan-rust ./trojan-rust-macos
+        
+      - name: Release
         uses: softprops/action-gh-release@v0.1.7
         with: 
-          files: target/release/trojan-rust.exe
+          files: |
+            trojan-rust-windows.exe
+            trojan-rust-linux
+            trojan-rust-macos
