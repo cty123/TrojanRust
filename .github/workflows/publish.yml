@@ -32,9 +32,12 @@ jobs:
             asset_name: trojan-rust-macos
 
     steps:
-    - uses: actions/checkout@v1
+    - name: Checkout
+      uses: actions/checkout@v2
 
-    - uses: actions-rs/toolchain@v1
+    
+    - name: Rust Toolchain
+      uses: actions-rs/toolchain@v1
       with:
         profile: minimal
         toolchain: stable
@@ -42,8 +45,13 @@ jobs:
     - name: Build
       run: cargo build --release --locked
 
-    - name: Upload binaries to release
+    - name: Upload
       uses: actions/upload-artifact@v2
       with:
         name: ${{ matrix.asset_name }}
         path: ${{ matrix.artifact_name }}
+    
+    - name: Release
+      uses: softprops/action-gh-release@v0.1.7
+      with:
+        files: ${{ matrix.artifact_name }}
