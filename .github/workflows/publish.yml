@@ -20,16 +20,16 @@ jobs:
         include:
           - name: linux
             os: ubuntu-latest
-            artifact_name: target/release/<name>
-            asset_name: <name>-linux
+            artifact_name: target/release/trojan-rust
+            asset_name: trojan-rust-linux
           - name: windows
             os: windows-latest
-            artifact_name: target/release/<name>.exe
-            asset_name: <name>-windows
+            artifact_name: target/release/trojan-rust.exe
+            asset_name: trojan-rust-windows
           - name: macos
             os: macos-latest
-            artifact_name: target/release/<name>
-            asset_name: <name>-macos
+            artifact_name: target/release/trojan-rust
+            asset_name: trojan-rust-macos
 
     steps:
     - uses: actions/checkout@v1
