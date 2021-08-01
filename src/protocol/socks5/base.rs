@@ -103,8 +103,20 @@ impl Request {
     #[inline]
     pub fn inbound_request(self) -> InboundRequest {
         return match self.command {
-            UDP => InboundRequest::new(self.addr, self.port, TransportProtocol::UDP),
-            _ => InboundRequest::new(self.addr, self.port, TransportProtocol::TCP),
+            UDP => InboundRequest::new(
+                self.atype,
+                self.addr,
+                self.command,
+                self.port,
+                TransportProtocol::UDP,
+            ),
+            _ => InboundRequest::new(
+                self.atype,
+                self.addr,
+                self.command,
+                self.port,
+                TransportProtocol::TCP,
+            ),
         };
     }
 }

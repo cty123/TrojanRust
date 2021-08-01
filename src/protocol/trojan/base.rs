@@ -15,15 +15,6 @@ pub struct Request {
     port: u16,
 }
 
-// pub struct UdpRequest {
-//     atype: u8,
-//     addr: IpAddr,
-//     addr_len: usize,
-//     port: u16,
-//     payload: [u8; 2048],
-//     payload_size: usize,
-// }
-
 impl Request {
     pub fn new(
         hex: [u8; 56],
@@ -74,8 +65,31 @@ impl Request {
     #[inline]
     pub fn inbound_request(self) -> InboundRequest {
         return match self.command {
-            UDP => InboundRequest::new(self.addr, self.port, TransportProtocol::UDP),
-            _ => InboundRequest::new(self.addr, self.port, TransportProtocol::TCP),
+            UDP => InboundRequest::new(
+                self.atype,
+                self.addr,
+                self.command,
+                self.port,
+                TransportProtocol::UDP,
+            ),
+            _ => InboundRequest::new(
+                self.atype,
+                self.addr,
+                self.command,
+                self.port,
+                TransportProtocol::TCP,
+            ),
         };
+    }
+
+    pub fn from_request(request: &InboundRequest, secret: [u8; 56]) -> Request {
+        Request {
+            hex: secret,
+            command: request.command,
+            atype: request.atype,
+            addr: request.addr.clone(),
+            addr_len: request.addr.len(),
+            port: request.port,
+        }
     }
 }

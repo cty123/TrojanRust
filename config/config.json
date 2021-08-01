@@ -2,12 +2,14 @@
     "inbound": {
         "protocol": "TROJAN",
         "address": "0.0.0.0",
+        "secret": "",
         "port": 8081,
         "tls": true,
         "cert_path": "C:\\Users\\ctych\\Projects\\TrojanRust\\config\\cert.pem",
         "key_path": "C:\\Users\\ctych\\Projects\\TrojanRust\\config\\key.pem"
     },
     "outbound": {
-        "protocol": "DIRECT"
+        "protocol": "DIRECT",
+        "secret": ""
     }
 }

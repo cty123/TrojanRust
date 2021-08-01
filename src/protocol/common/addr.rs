@@ -8,11 +8,13 @@ pub const ATYPE_IPV4: u8 = 1;
 pub const ATYPE_IPV6: u8 = 4;
 pub const ATYPE_DOMAIN_NAME: u8 = 3;
 
+#[derive(Clone)]
 pub enum IpAddress {
     IpAddr(IpAddr),
     Domain(DomainName),
 }
 
+#[derive(Clone)]
 pub struct DomainName {
     inner: Vec<u8>,
 }
@@ -39,6 +41,15 @@ impl IpAddress {
             IpAddress::IpAddr(IpAddr::V4(ip)) => ip.octets().to_vec(),
             IpAddress::IpAddr(IpAddr::V6(ip)) => ip.octets().to_vec(),
             IpAddress::Domain(domain) => domain.inner.to_vec(),
+        }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            IpAddress::IpAddr(IpAddr::V4(_)) => IPV4_SIZE,
+            IpAddress::IpAddr(IpAddr::V6(_)) => IPV6_SIZE,
+            IpAddress::Domain(domain) => domain.inner.len(),
         }
     }
 
