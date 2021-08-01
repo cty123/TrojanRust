@@ -95,9 +95,9 @@ Run trojan-rust with specified config file
 
 - [x] Support server side Trojan protocol for handling Trojan traffic.
 
-- [ ] Implement client side Trojan protocol so that trojan-rust and be used as an client for using Trojan. - Work in progress.
+- [x] Implement UDP over TCP for Trojan protocol on server side.
 
-- [ ] Implement UDP over TCP for Trojan protocol on both client side and server side.
+- [ ] Implement client side Trojan protocol so that trojan-rust and be used as a Trojan client. - Work in progress.
 
 - [ ] Performance profiling and bottleneck resolving. Will also include benchmarks versus other implementations.
 
