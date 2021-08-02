@@ -11,6 +11,7 @@
     "outbound": {
         "protocol": "TROJAN",
         "secret": "",
+        "server_name": "",
         "address": "10.0.0.6",
         "port": 8081,
         "tls": false

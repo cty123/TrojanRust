@@ -5,7 +5,29 @@ use std::io::{BufReader, Error, ErrorKind, Result};
 use std::sync::Arc;
 
 use rustls::internal::pemfile;
-use rustls::{Certificate, NoClientAuth, PrivateKey, ServerConfig};
+use rustls::{Certificate, ClientConfig, NoClientAuth, PrivateKey, ServerConfig};
+
+use crate::config::base::{NoCertificateVerification, OutboundConfig};
+
+pub fn get_client_config(tls: bool, insecure: bool) -> Option<Arc<ClientConfig>> {
+    match tls {
+        true if insecure => {
+            let mut config = ClientConfig::default();
+            config
+                .dangerous()
+                .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
+            Some(Arc::new(config))
+        }
+        true => {
+            let mut config = ClientConfig::default();
+            config
+                .root_store
+                .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+            Some(Arc::new(config))
+        }
+        false => None,
+    }
+}
 
 pub fn get_tls_config(cert_path: &str, key_path: &str) -> Result<Arc<ServerConfig>> {
     let certificates = load_certs(cert_path)?;

@@ -1,10 +1,14 @@
 use std::io::{Error, ErrorKind, Result};
+use std::sync::Arc;
 
 use log::{info, warn};
+use rustls::ClientConfig;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
+use tokio_rustls::{webpki::DNSNameRef, TlsConnector};
 
 use crate::config::base::OutboundConfig;
+use crate::config::tls::get_client_config;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::protocol::common::stream::OutboundStream;
 use crate::protocol::direct::outbound::DirectOutboundStream;
@@ -16,6 +20,7 @@ use crate::proxy::base::SupportedProtocols;
 pub struct Handler {
     protocol: SupportedProtocols,
     tls: bool,
+    tls_config: Option<Arc<ClientConfig>>,
     destination: Option<String>,
 }
 
@@ -35,6 +40,7 @@ impl Handler {
             protocol: config.protocol,
             destination,
             tls: false,
+            tls_config: get_client_config(config.tls, config.insecure),
         }
     }
 
@@ -86,7 +92,24 @@ impl Handler {
         return Handler::handle_protocol(connection, protocol, request).await;
     }
 
-    async fn tls(addr_port: &str) {}
+    async fn tls(
+        addr_port: &str,
+        request: &InboundRequest,
+        config: Option<Arc<ClientConfig>>,
+        protocol: SupportedProtocols,
+    ) -> Result<Box<dyn OutboundStream>> {
+        return match config {
+            Some(cfg) => {
+                let config = TlsConnector::from(cfg);
+                let stream = TcpStream::connect(&addr_port).await?;
+                let domain = DNSNameRef::try_from_ascii_str("example.com")
+                    .map_err(|_| Error::new(ErrorKind::InvalidInput, "invalid dnsname"))?;
+                let tls_stream = config.connect(domain, stream).await?;
+                Handler::handle_protocol(tls_stream, protocol, request).await
+            }
+            None => Err(Error::new(ErrorKind::InvalidInput, "No tls config")),
+        };
+    }
 
     async fn handle_protocol<IO>(
         stream: IO,
