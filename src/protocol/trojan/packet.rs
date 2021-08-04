@@ -58,17 +58,18 @@ impl AsyncRead for PacketTrojanOutboundStream {
         buf.put_slice(&[self.atype]);
         buf.put_slice(&self.addr.to_bytes());
         buf.put_slice(&self.port.to_be_bytes());
+        buf.put_slice(&[0, 0]);
+        buf.put_slice(&[0x0D, 0x0A]);
+        
+        let header_len = buf.filled().len();
 
-        let mut vec = [0u8; 4096];
-        let mut readbuf = ReadBuf::new(&mut vec);
-
-        return match self.udp_socket.poll_recv_from(cx, &mut readbuf) {
+        return match self.udp_socket.poll_recv_from(cx, buf) {
             Poll::Ready(res) => match res {
                 Ok(_) => {
-                    let length = readbuf.filled().len() as u16;
-                    buf.put_slice(&length.to_be_bytes());
-                    buf.put_slice(&[0x0D, 0x0A]);
-                    buf.put_slice(&readbuf.filled());
+                    let payload_len = (buf.filled().len() - header_len) as u16;
+                    let len_bytes = payload_len.to_be_bytes();
+                    buf.filled_mut()[header_len - 4] = len_bytes[0];
+                    buf.filled_mut()[header_len - 3] = len_bytes[1];
                     Poll::Ready(Ok(()))
                 }
                 Err(e) => {
