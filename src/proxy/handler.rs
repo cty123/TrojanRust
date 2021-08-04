@@ -84,7 +84,7 @@ impl Handler {
             Err(e) => {
                 return Err(Error::new(
                     ErrorKind::ConnectionReset,
-                    format!("Failed to connect to {}: {}", addr_port, e),
+                    format!("Failed to connect to {}, {}", addr_port, e),
                 ))
             }
         };

@@ -9,11 +9,8 @@
         "key_path": "C:\\Users\\ctych\\Projects\\TrojanRust\\config\\key.pem"
     },
     "outbound": {
-        "protocol": "TROJAN",
-        "secret": "",
-        "server_name": "",
-        "address": "10.0.0.6",
-        "port": 8081,
+        "protocol": "DIRECT",
+        "insecure": false,
         "tls": false
     }
 }

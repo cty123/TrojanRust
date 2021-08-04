@@ -18,7 +18,7 @@ pub async fn parse<IO>(mut stream: IO) -> Result<Request>
     // Read version number
     let version = match stream.read_u8().await? {
         VERSION => VERSION,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported version number")),
+        _ => return Err(Error::new(ErrorKind::Unsupported, "Unsupported version number")),
     };
 
     // Read command byte
@@ -26,7 +26,7 @@ pub async fn parse<IO>(mut stream: IO) -> Result<Request>
         CONNECT => CONNECT,
         BIND => BIND,
         UDP => UDP,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported command"))
+        _ => return Err(Error::new(ErrorKind::Unsupported, "Unsupported command"))
     };
 
     // Don't do anything about rsv
@@ -38,28 +38,29 @@ pub async fn parse<IO>(mut stream: IO) -> Result<Request>
         ATYPE_DOMAIN_NAME => ATYPE_DOMAIN_NAME,
         ATYPE_IPV6 => ATYPE_IPV6,
         _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported address type"))
+    };    
+    
+    // Get address size
+    let addr_size = match atype {
+        ATYPE_IPV4 => IPV4_SIZE,
+        ATYPE_IPV6 => IPV6_SIZE,
+        ATYPE_DOMAIN_NAME => usize::from(stream.read_u8().await?),
+        _ => {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Unsupported address type",
+            ))
+        }
     };
 
     // Read the actual address, don't support domain name for now
     let addr = match atype {
-        ATYPE_IPV4 => {
-            let mut buf = [0u8; IPV4_SIZE];
-            stream.read_exact(&mut buf).await?;
-            IpAddress::IpAddr(IpAddr::V4(Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3])))
-        },
-        ATYPE_IPV6 => {
-            let mut buf = [0u8; IPV6_SIZE];
-            stream.read_exact(&mut buf).await?;
-            IpAddress::IpAddr(IpAddr::V6(Ipv6Addr::new(
-                u16::from_be_bytes([buf[0], buf[1]]), 
-                u16::from_be_bytes([buf[2], buf[3]]), 
-                u16::from_be_bytes([buf[4], buf[5]]), 
-                u16::from_be_bytes([buf[6], buf[7]]), 
-                u16::from_be_bytes([buf[8], buf[9]]), 
-                u16::from_be_bytes([buf[10], buf[11]]), 
-                u16::from_be_bytes([buf[12], buf[13]]), 
-                u16::from_be_bytes([buf[14], buf[15]])
-            )))
+        ATYPE_IPV4 => IpAddress::from_u32(stream.read_u32().await?),
+        ATYPE_IPV6 => IpAddress::from_u128(stream.read_u128().await?),
+        ATYPE_DOMAIN_NAME => {
+            let mut buf = [0u8; 256];
+            stream.read_exact(&mut buf[..addr_size]).await?;
+            IpAddress::from_vec(buf[..addr_size].to_vec())
         }
         // Temporarily not supporting domain name
         _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported address type"))

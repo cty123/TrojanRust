@@ -21,7 +21,7 @@ pub struct DomainName {
 
 impl fmt::Display for DomainName {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "Domain:{}", String::from_utf8_lossy(&self.inner))
+        write!(fmt, "{}", String::from_utf8_lossy(&self.inner))
     }
 }
 

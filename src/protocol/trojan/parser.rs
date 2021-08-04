@@ -58,9 +58,9 @@ where
         ATYPE_IPV4 => IpAddress::from_u32(stream.read_u32().await?),
         ATYPE_IPV6 => IpAddress::from_u128(stream.read_u128().await?),
         ATYPE_DOMAIN_NAME => {
-            let mut buf = Vec::with_capacity(addr_size);
+            let mut buf = [0u8; 256];
             stream.read_exact(&mut buf[..addr_size]).await?;
-            IpAddress::from_vec(buf)
+            IpAddress::from_vec(buf[..addr_size].to_vec())
         }
         _ => {
             return Err(Error::new(

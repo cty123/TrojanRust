@@ -3,6 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
+use log::info;
 use tokio::io::{AsyncRead, AsyncWrite, BufReader, ReadBuf};
 
 use crate::protocol::common::request::InboundRequest;
@@ -58,6 +59,7 @@ where
 {
     async fn handshake(&mut self) -> Result<InboundRequest> {
         let request = parse(&mut self.stream).await?;
+        info!("Received Trojan request {}", request.dump_request());
         return Ok(request.inbound_request());
     }
 }
