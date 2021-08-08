@@ -100,11 +100,13 @@ Run trojan-rust with specified config file
 - [ ] Implement client side Trojan protocol so that trojan-rust and be used as a Trojan client. - Work in progress.
     - [x] Implement client side Trojan protocol with TCP
     - [ ] Implement client side Trojan protocol with TLS
-    - [ ] Implement client side Trojan protocol with UDP over TCP.   
+    - [ ] -[Delayed After Beta] Implement client side Trojan protocol with UDP over TCP.
 
 - [ ] Performance profiling and bottleneck resolving. Will also include benchmarks versus other implementations.
 
 ## Official release 1.0.0 and above(For general users)
+- [ ] +[Delayed After Beta] Implement client side Trojan protocol with UDP over TCP.   
+
 - [ ] Build the package into kernel module release
 
 - [ ] Support other protocols, gRPC, websocket etc.
