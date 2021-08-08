@@ -21,24 +21,16 @@ pub struct Handler {
     protocol: SupportedProtocols,
     tls: bool,
     tls_config: Option<Arc<ClientConfig>>,
-    destination: Option<String>,
+    addr: Option<String>,
+    port: Option<u16>,
 }
 
 impl Handler {
     pub fn new(config: OutboundConfig) -> Handler {
-        let destination = if config.address.is_some() && config.port.is_some() {
-            Some(format!(
-                "{}:{}",
-                config.address.unwrap(),
-                config.port.unwrap()
-            ))
-        } else {
-            None
-        };
-
         Handler {
             protocol: config.protocol,
-            destination,
+            addr: config.address,
+            port: config.port,
             tls: config.tls.is_some(),
             tls_config: make_client_config(config.tls),
         }
@@ -49,16 +41,13 @@ impl Handler {
         return match request.transport_protocol {
             TransportProtocol::TCP => self.tcp_dial_destination(request).await,
             TransportProtocol::UDP => {
-                info!("Handle UDP associate to {}", request.addr_port());
+                let (addr, port) = request.addr_port();
+                info!("Handle UDP associate to {}:{}", addr, port);
                 match PacketTrojanOutboundStream::new().await {
                     Ok(c) => Ok(c),
                     Err(e) => Err(Error::new(
                         ErrorKind::ConnectionReset,
-                        format!(
-                            "Failed to dial udp connection to {}, {}",
-                            request.addr_port(),
-                            e
-                        ),
+                        format!("Failed to dial udp connection to {}:{}, {}", addr, port, e),
                     )),
                 }
             }
@@ -71,9 +60,10 @@ impl Handler {
         request: &InboundRequest,
     ) -> Result<Box<dyn OutboundStream>> {
         return match self.tls {
-            true if self.tls_config.is_some() => {
+            true if self.tls_config.is_some() && self.addr.is_some() && self.port.is_some() => {
                 Handler::tls(
-                    &self.destination.unwrap(),
+                    &self.addr.unwrap(),
+                    self.port.unwrap(),
                     request,
                     self.tls_config.unwrap(),
                     self.protocol,
@@ -86,26 +76,36 @@ impl Handler {
                     "Failed to find tls config",
                 ))
             }
-            false if self.destination.is_some() => {
-                Handler::tcp(&self.destination.unwrap(), request, self.protocol).await
+            false if self.addr.is_some() => {
+                Handler::tcp(
+                    &self.addr.unwrap(),
+                    self.port.unwrap(),
+                    request,
+                    self.protocol,
+                )
+                .await
             }
-            false => Handler::tcp(&request.addr_port(), request, self.protocol).await,
+            false => {
+                let (addr, port) = request.addr_port();
+                Handler::tcp(&addr, port, request, self.protocol).await
+            }
         };
     }
 
     #[inline]
     async fn tcp(
-        addr_port: &str,
+        addr: &str,
+        port: u16,
         request: &InboundRequest,
         protocol: SupportedProtocols,
     ) -> Result<Box<dyn OutboundStream>> {
-        info!("Dialing remote host at {}", addr_port);
-        let connection = match TcpStream::connect(addr_port).await {
+        info!("Dialing remote host at {}:{}", addr, port);
+        let connection = match TcpStream::connect((addr, port)).await {
             Ok(connection) => connection,
             Err(e) => {
                 return Err(Error::new(
                     ErrorKind::ConnectionReset,
-                    format!("Failed to connect to {}, {}", addr_port, e),
+                    format!("Failed to connect to {}:{}, {}", addr, port, e),
                 ))
             }
         };
@@ -115,13 +115,14 @@ impl Handler {
 
     #[inline]
     async fn tls(
-        addr_port: &str,
+        addr: &str,
+        port: u16,
         request: &InboundRequest,
         config: Arc<ClientConfig>,
         protocol: SupportedProtocols,
     ) -> Result<Box<dyn OutboundStream>> {
         let config = TlsConnector::from(config);
-        let stream = TcpStream::connect(&addr_port).await?;
+        let stream = TcpStream::connect((addr, port)).await?;
         let domain = DNSNameRef::try_from_ascii_str("example.com")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid dnsname"))?;
         let tls_stream = config.connect(domain, stream).await?;

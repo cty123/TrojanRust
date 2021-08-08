@@ -1,11 +1,9 @@
-use log::{info, warn};
-
 use std::io::Result;
 use std::sync::Arc;
 
-use tokio::net::TcpListener;
-
+use log::{info, warn};
 use rustls::ServerConfig;
+use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
 use crate::config::base::{InboundConfig, OutboundConfig};
@@ -74,7 +72,7 @@ impl TcpServer {
                 };
                 match TcpServer::dispatch(&mut inbound_stream, handler).await {
                     Ok(_) => {
-                        info!("Connection finished");
+                        info!("Connection to {} has finished", addr);
                         Ok(())
                     }
                     Err(e) => {

@@ -33,7 +33,7 @@ impl InboundRequest {
     }
 
     #[inline]
-    pub fn addr_port(&self) -> String {
-        format!("{}:{}", self.addr, self.port)
+    pub fn addr_port(&self) -> (String, u16) {
+        (self.addr.to_string(), self.port)
     }
 }
