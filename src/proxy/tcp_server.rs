@@ -1,6 +1,6 @@
-use log::{error, info, warn};
+use log::{info, warn};
 
-use std::io::{Error, ErrorKind, Result};
+use std::io::Result;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
@@ -9,7 +9,7 @@ use rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 
 use crate::config::base::{InboundConfig, OutboundConfig};
-use crate::config::tls::get_tls_config;
+use crate::config::tls::make_server_config;
 use crate::protocol::common::stream::InboundStream;
 use crate::proxy::acceptor::Acceptor;
 use crate::proxy::base::SupportedProtocols;
@@ -19,6 +19,7 @@ pub struct TcpServer {
     local_addr: String,
     local_port: u16,
     protocol: SupportedProtocols,
+    tls: bool,
     tls_config: Option<Arc<ServerConfig>>,
     handler: Handler,
 }
@@ -28,29 +29,14 @@ impl TcpServer {
         inbound_config: InboundConfig,
         outbound_config: OutboundConfig,
     ) -> Result<TcpServer> {
-        let tls_config = match inbound_config.tls {
-            true if inbound_config.cert_path.is_some() && inbound_config.key_path.is_some() => {
-                Some(get_tls_config(
-                    &inbound_config.cert_path.unwrap(),
-                    &inbound_config.key_path.unwrap(),
-                )?)
-            }
-            true => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    "missing tls certificate path or tls private key path",
-                ))
-            }
-            false => None,
-        };
-
         let handler = Handler::new(outbound_config);
 
         return Ok(TcpServer {
             local_addr: inbound_config.address,
             local_port: inbound_config.port,
             protocol: inbound_config.protocol,
-            tls_config,
+            tls: inbound_config.tls.is_some(),
+            tls_config: make_server_config(inbound_config.tls),
             handler,
         });
     }
@@ -74,27 +60,25 @@ impl TcpServer {
         );
 
         loop {
-            let (socket, _) = listener.accept().await?;
+            let (socket, addr) = listener.accept().await?;
+
+            info!("Received new connection from {}", addr);
+
             let acceptor = acceptor.clone();
-
-            let mut inbound_stream = match acceptor.accept(socket).await {
-                Ok(stream) => stream,
-                Err(e) => {
-                    warn!("Failed to escalate to TLS protocol, {}", e);
-                    continue;
-                }
-            };
-
             let handler = self.handler.clone();
 
             tokio::spawn(async move {
+                let mut inbound_stream = match acceptor.accept(socket).await {
+                    Ok(stream) => stream,
+                    Err(e) => return Err(e),
+                };
                 match TcpServer::dispatch(&mut inbound_stream, handler).await {
                     Ok(_) => {
                         info!("Connection finished");
                         Ok(())
                     }
                     Err(e) => {
-                        error!("Failed to handle the inbound stream: {}", e);
+                        warn!("Failed to handle the inbound stream: {}", e);
                         return Err(e);
                     }
                 }

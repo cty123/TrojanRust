@@ -8,7 +8,7 @@ use tokio::net::TcpStream;
 use tokio_rustls::{webpki::DNSNameRef, TlsConnector};
 
 use crate::config::base::OutboundConfig;
-use crate::config::tls::get_client_config;
+use crate::config::tls::make_client_config;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::protocol::common::stream::OutboundStream;
 use crate::protocol::direct::outbound::DirectOutboundStream;
@@ -39,23 +39,26 @@ impl Handler {
         Handler {
             protocol: config.protocol,
             destination,
-            tls: false,
-            tls_config: get_client_config(config.tls, config.insecure),
+            tls: config.tls.is_some(),
+            tls_config: make_client_config(config.tls),
         }
     }
 
+    #[inline]
     pub async fn handle(self, request: &InboundRequest) -> Result<Box<dyn OutboundStream>> {
-        let addr_port = request.addr_port();
-
         return match request.transport_protocol {
-            TransportProtocol::TCP => self.tcp_dial(request).await,
+            TransportProtocol::TCP => self.tcp_dial_destination(request).await,
             TransportProtocol::UDP => {
-                info!("UDP associate to {}", request.addr_port());
+                info!("Handle UDP associate to {}", request.addr_port());
                 match PacketTrojanOutboundStream::new().await {
                     Ok(c) => Ok(c),
-                    Err(_) => Err(Error::new(
+                    Err(e) => Err(Error::new(
                         ErrorKind::ConnectionReset,
-                        format!("Failed to dial udp connection to {}", addr_port),
+                        format!(
+                            "Failed to dial udp connection to {}, {}",
+                            request.addr_port(),
+                            e
+                        ),
                     )),
                 }
             }
@@ -63,9 +66,26 @@ impl Handler {
     }
 
     #[inline]
-    async fn tcp_dial(self, request: &InboundRequest) -> Result<Box<dyn OutboundStream>> {
+    async fn tcp_dial_destination(
+        self,
+        request: &InboundRequest,
+    ) -> Result<Box<dyn OutboundStream>> {
         return match self.tls {
-            true => Err(Error::new(ErrorKind::Unsupported, "Unsupported")),
+            true if self.tls_config.is_some() => {
+                Handler::tls(
+                    &self.destination.unwrap(),
+                    request,
+                    self.tls_config.unwrap(),
+                    self.protocol,
+                )
+                .await
+            }
+            true => {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    "Failed to find tls config",
+                ))
+            }
             false if self.destination.is_some() => {
                 Handler::tcp(&self.destination.unwrap(), request, self.protocol).await
             }
@@ -73,6 +93,7 @@ impl Handler {
         };
     }
 
+    #[inline]
     async fn tcp(
         addr_port: &str,
         request: &InboundRequest,
@@ -92,23 +113,19 @@ impl Handler {
         return Handler::handle_protocol(connection, protocol, request).await;
     }
 
+    #[inline]
     async fn tls(
         addr_port: &str,
         request: &InboundRequest,
-        config: Option<Arc<ClientConfig>>,
+        config: Arc<ClientConfig>,
         protocol: SupportedProtocols,
     ) -> Result<Box<dyn OutboundStream>> {
-        return match config {
-            Some(cfg) => {
-                let config = TlsConnector::from(cfg);
-                let stream = TcpStream::connect(&addr_port).await?;
-                let domain = DNSNameRef::try_from_ascii_str("example.com")
-                    .map_err(|_| Error::new(ErrorKind::InvalidInput, "invalid dnsname"))?;
-                let tls_stream = config.connect(domain, stream).await?;
-                Handler::handle_protocol(tls_stream, protocol, request).await
-            }
-            None => Err(Error::new(ErrorKind::InvalidInput, "No tls config")),
-        };
+        let config = TlsConnector::from(config);
+        let stream = TcpStream::connect(&addr_port).await?;
+        let domain = DNSNameRef::try_from_ascii_str("example.com")
+            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid dnsname"))?;
+        let tls_stream = config.connect(domain, stream).await?;
+        Handler::handle_protocol(tls_stream, protocol, request).await
     }
 
     async fn handle_protocol<IO>(

@@ -1,46 +1,78 @@
 use log::{error, warn};
 
 use std::fs::File;
-use std::io::{BufReader, Error, ErrorKind, Result};
+use std::io::{BufReader, Error, ErrorKind};
 use std::sync::Arc;
 
 use rustls::internal::pemfile;
-use rustls::{Certificate, ClientConfig, NoClientAuth, PrivateKey, ServerConfig};
+use rustls::{
+    Certificate, ClientConfig, NoClientAuth, PrivateKey, RootCertStore, ServerCertVerified,
+    ServerCertVerifier, ServerConfig, TLSError,
+};
+use tokio_rustls::webpki::DNSNameRef;
 
-use crate::config::base::{NoCertificateVerification, OutboundConfig};
+use crate::config::base::{InboundConfig, OutboundConfig, TlsConfig};
 
-pub fn get_client_config(tls: bool, insecure: bool) -> Option<Arc<ClientConfig>> {
-    match tls {
-        true if insecure => {
+pub struct NoCertificateVerification {}
+
+impl ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _roots: &RootCertStore,
+        _presented_certs: &[Certificate],
+        _dns_name: DNSNameRef,
+        _ocsp_response: &[u8],
+    ) -> Result<ServerCertVerified, TLSError> {
+        Ok(rustls::ServerCertVerified::assertion())
+    }
+}
+
+pub fn make_client_config(config: Option<TlsConfig>) -> Option<Arc<ClientConfig>> {
+    match config {
+        Some(cfg) if cfg.allow_insecure => {
             let mut config = ClientConfig::default();
             config
                 .dangerous()
                 .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
             Some(Arc::new(config))
         }
-        true => {
+        Some(_) => {
             let mut config = ClientConfig::default();
             config
                 .root_store
                 .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
             Some(Arc::new(config))
         }
-        false => None,
+        None => None,
     }
 }
 
-pub fn get_tls_config(cert_path: &str, key_path: &str) -> Result<Arc<ServerConfig>> {
-    let certificates = load_certs(cert_path)?;
-    let key = load_private_key(key_path)?;
-    let mut cfg = rustls::ServerConfig::new(NoClientAuth::new());
+pub fn make_server_config(config: Option<TlsConfig>) -> Option<Arc<ServerConfig>> {
+    return match config {
+        Some(cfg) if cfg.key_path.is_some() && cfg.cert_path.is_some() => {
+            let certificates = match load_certs(&cfg.cert_path.as_ref().unwrap()) {
+                Ok(certs) => certs,
+                Err(_) => return None,
+            };
 
-    return match cfg.set_single_cert(certificates, key) {
-        Ok(_) => Ok(Arc::new(cfg)),
-        Err(e) => Err(Error::new(ErrorKind::InvalidData, e)),
+            let key = match load_private_key(&cfg.key_path.as_ref().unwrap()) {
+                Ok(key) => key,
+                Err(_) => return None,
+            };
+
+            let mut cfg = rustls::ServerConfig::new(NoClientAuth::new());
+
+            match cfg.set_single_cert(certificates, key) {
+                Ok(_) => Some(Arc::new(cfg)),
+                Err(_) => None,
+            }
+        }
+        Some(_) => None,
+        None => None,
     };
 }
 
-fn load_certs(path: &str) -> Result<Vec<Certificate>> {
+fn load_certs(path: &str) -> std::io::Result<Vec<Certificate>> {
     let mut reader = match File::open(path) {
         Ok(file) => BufReader::new(file),
         Err(e) => {
@@ -58,7 +90,7 @@ fn load_certs(path: &str) -> Result<Vec<Certificate>> {
     };
 }
 
-fn load_private_key(path: &str) -> Result<PrivateKey> {
+fn load_private_key(path: &str) -> std::io::Result<PrivateKey> {
     let mut reader = match File::open(path) {
         Ok(file) => BufReader::new(file),
         Err(e) => {
