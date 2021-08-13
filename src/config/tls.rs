@@ -11,7 +11,7 @@ use rustls::{
 };
 use tokio_rustls::webpki::DNSNameRef;
 
-use crate::config::base::{InboundConfig, OutboundConfig, TlsConfig};
+use crate::config::base::TlsConfig;
 
 pub struct NoCertificateVerification {}
 

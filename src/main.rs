@@ -5,7 +5,6 @@ use std::io::{Error, ErrorKind, Result};
 use clap::{App, Arg};
 
 mod config;
-mod infra;
 mod protocol;
 mod proxy;
 
@@ -14,7 +13,7 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     let matches = App::new("Trojan Rust")
-        .version("0.1.0")
+        .version("0.2.4")
         .author("cty123")
         .about("Trojan Rust is a rust implementation of the trojan protocol to circumvent GFW")
         .arg(

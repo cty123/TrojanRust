@@ -68,16 +68,17 @@ impl TcpServer {
             tokio::spawn(async move {
                 let mut inbound_stream = match acceptor.accept(socket).await {
                     Ok(stream) => stream,
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        warn!("Failed to accept inbound connection from {}: {}", addr, e);
+                        return;
+                    }
                 };
                 match TcpServer::dispatch(&mut inbound_stream, handler).await {
                     Ok(_) => {
                         info!("Connection to {} has finished", addr);
-                        Ok(())
                     }
                     Err(e) => {
                         warn!("Failed to handle the inbound stream: {}", e);
-                        return Err(e);
                     }
                 }
             });
