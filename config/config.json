@@ -1,17 +1,16 @@
 {
     "inbound": {
-        "protocol": "SOCKS",
+        "protocol": "TROJAN",
         "address": "0.0.0.0",
         "secret": "123123",
-        "port": 8081
-    },
-    "outbound": {
-        "protocol": "TROJAN",
-        "address": "10.0.0.6",
         "port": 8081,
         "tls": {
-            "allow_insecure": true,
-            "host_name": "www.example.com"
+            "cert_path": "C:\\Users\\ctych\\Projects\\TrojanRust\\config\\cert.pem",
+            "key_path": "C:\\Users\\ctych\\Projects\\TrojanRust\\config\\key.pem",
+            "allow_insecure": true
         }
+    },
+    "outbound": {
+        "protocol": "DIRECT"
     }
 }
