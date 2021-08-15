@@ -7,6 +7,7 @@ pub struct InboundConfig {
     pub protocol: SupportedProtocols,
     pub address: String,
     pub port: u16,
+    pub secret: Option<String>,
 
     pub tls: Option<TlsConfig>,
 }

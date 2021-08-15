@@ -1,4 +1,4 @@
-use std::io::Result;
+use std::io::{Error, ErrorKind, Result};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -12,6 +12,7 @@ use crate::protocol::trojan::parser::parse;
 
 pub struct TrojanInboundStream<IO> {
     stream: BufReader<IO>,
+    secret: [u8; 56],
 }
 
 impl<IO> AsyncRead for TrojanInboundStream<IO>
@@ -60,7 +61,15 @@ where
     async fn handshake(&mut self) -> Result<InboundRequest> {
         let request = parse(&mut self.stream).await?;
         info!("Received Trojan request {}", request.dump_request());
-        return Ok(request.inbound_request());
+
+        if !request.validate(&self.secret) {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Received invalid hex value, dropping connection",
+            ));
+        }
+
+        Ok(request.inbound_request())
     }
 }
 
@@ -68,9 +77,12 @@ impl<IO> TrojanInboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    pub fn new(stream: IO) -> Box<dyn InboundStream> {
+    pub fn new(stream: IO, secret: &[u8]) -> Box<dyn InboundStream> {
+        let mut hex = [0u8; 56];
+        hex[..secret.len()].clone_from_slice(secret);
         return Box::new(TrojanInboundStream {
             stream: tokio::io::BufReader::with_capacity(2048, stream),
+            secret: hex,
         });
     }
 }

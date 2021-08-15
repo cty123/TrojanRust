@@ -82,6 +82,15 @@ impl Request {
         };
     }
 
+    #[inline]
+    pub fn validate(&self, secret: &[u8]) -> bool {
+        if secret.len() != self.hex.len() {
+            return false;
+        }
+
+        return secret == self.hex;
+    }
+
     pub fn from_request(request: &InboundRequest, secret: [u8; 56]) -> Request {
         Request {
             hex: secret,

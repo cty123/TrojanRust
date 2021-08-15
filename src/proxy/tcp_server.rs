@@ -19,6 +19,7 @@ pub struct TcpServer {
     protocol: SupportedProtocols,
     tls: bool,
     tls_config: Option<Arc<ServerConfig>>,
+    secret: Option<String>,
     handler: Handler,
 }
 
@@ -32,6 +33,7 @@ impl TcpServer {
         return Ok(TcpServer {
             local_addr: inbound_config.address,
             local_port: inbound_config.port,
+            secret: inbound_config.secret,
             protocol: inbound_config.protocol,
             tls: inbound_config.tls.is_some(),
             tls_config: make_server_config(inbound_config.tls),
@@ -48,8 +50,9 @@ impl TcpServer {
                 self.protocol,
                 self.local_port,
                 Some(TlsAcceptor::from(config)),
+                self.secret,
             ),
-            None => Acceptor::new(self.protocol, self.local_port, None),
+            None => Acceptor::new(self.protocol, self.local_port, None, self.secret),
         };
 
         info!(
