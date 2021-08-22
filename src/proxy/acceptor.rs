@@ -38,7 +38,6 @@ impl Acceptor {
             }
             _ => Vec::new(),
         };
-        info!("Computed hash {:?}", secret);
 
         Acceptor {
             tls_acceptor,

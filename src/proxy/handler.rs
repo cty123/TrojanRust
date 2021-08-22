@@ -129,6 +129,7 @@ impl Handler {
         Handler::handle_protocol(tls_stream, protocol, request).await
     }
 
+    #[inline]
     async fn handle_protocol<IO>(
         stream: IO,
         protocol: SupportedProtocols,

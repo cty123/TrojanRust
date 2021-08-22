@@ -1,12 +1,11 @@
-use std::io::{Error, ErrorKind, Result};
+use std::io::Result;
 
 use log::debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::protocol::common::addr::{
-    IpAddress, ATYPE_DOMAIN_NAME, ATYPE_IPV4, ATYPE_IPV6, IPV4_SIZE, IPV6_SIZE,
-};
-use crate::protocol::common::command::{CONNECT, UDP};
+use crate::protocol::common::addr::{IpAddress, IPV4_SIZE, IPV6_SIZE};
+use crate::protocol::common::atype::Atype;
+use crate::protocol::common::command::Command;
 use crate::protocol::trojan::base::Request;
 
 pub async fn parse<IO>(mut stream: IO) -> Result<Request>
@@ -21,52 +20,26 @@ where
     stream.read_u16().await?;
 
     // Extract command
-    let command = match stream.read_u8().await? {
-        CONNECT => CONNECT,
-        UDP => UDP,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "Unsupported command")),
+    let command = match Command::from(stream.read_u8().await?) {
+        Ok(command) => command,
+        Err(e) => return Err(e),
     };
 
-    // Extract address type
-    let atype = match stream.read_u8().await? {
-        ATYPE_IPV4 => ATYPE_IPV4,
-        ATYPE_DOMAIN_NAME => ATYPE_DOMAIN_NAME,
-        ATYPE_IPV6 => ATYPE_IPV6,
-        _ => {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "Unsupported address type",
-            ))
-        }
+    // Read address type
+    let atype = match Atype::from(stream.read_u8().await?) {
+        Ok(atype) => atype,
+        Err(e) => return Err(e),
     };
 
-    // Get address size
-    let addr_size = match atype {
-        ATYPE_IPV4 => IPV4_SIZE,
-        ATYPE_IPV6 => IPV6_SIZE,
-        ATYPE_DOMAIN_NAME => usize::from(stream.read_u8().await?),
-        _ => {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "Unsupported address type",
-            ))
-        }
-    };
-
-    // Extract address and port
-    let addr = match atype {
-        ATYPE_IPV4 => IpAddress::from_u32(stream.read_u32().await?),
-        ATYPE_IPV6 => IpAddress::from_u128(stream.read_u128().await?),
-        ATYPE_DOMAIN_NAME => {
-            let mut buf = [0u8; 256];
-            stream.read_exact(&mut buf[..addr_size]).await?;
-            IpAddress::from_vec(buf[..addr_size].to_vec())
-        }
-        _ => {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "Unsupported address type",
-            ))
+    // Get address size and address object
+    let (_, addr) = match atype {
+        Atype::IPv4 => (IPV4_SIZE, IpAddress::from_u32(stream.read_u32().await?)),
+        Atype::IPv6 => (IPV6_SIZE, IpAddress::from_u128(stream.read_u128().await?)),
+        Atype::DomainName => {
+            let size = usize::from(stream.read_u8().await?);
+            let mut buf = vec![0u8; size];
+            stream.read_exact(&mut buf).await?;
+            (size, IpAddress::from_vec(buf))
         }
     };
 
@@ -76,7 +49,7 @@ where
     // Read CLRF
     stream.read_u16().await?;
 
-    let request = Request::new(hex, command, atype, addr, addr_size, port);
+    let request = Request::new(hex, command, atype, addr, port);
 
     debug!("Read request {}", request.request_addr_port());
 

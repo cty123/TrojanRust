@@ -11,8 +11,25 @@ use rustls::{
 };
 use tokio_rustls::webpki::DNSNameRef;
 
-use crate::config::base::TlsConfig;
+use crate::config::base::{InboundTlsConfig, OutboundTlsConfig};
 
+/// Stub Certificate verifier that skips certificate verification. It is used when the user
+/// explicitly allows insecure TLS connection in configuration file, by setting
+///
+/// ```json
+/// {
+///     ...,
+///     outbound: {
+///         ...,
+///         tls: {
+///             ...,
+///             allow_insecure: true
+///         }
+///     }
+/// }
+/// ```
+///
+/// The option is not recommended for production level services, but could be handy in testing stages.
 pub struct NoCertificateVerification {}
 
 impl ServerCertVerifier for NoCertificateVerification {
@@ -27,7 +44,19 @@ impl ServerCertVerifier for NoCertificateVerification {
     }
 }
 
-pub fn make_client_config(config: Option<TlsConfig>) -> Option<Arc<ClientConfig>> {
+/// Create ClientConfig for rustls based on the configurations in the config.json file. The function
+/// will read the tls configuration under outbound,
+///
+/// ```json
+/// {
+///     outbound: {
+///         tls: {
+///             # Configurations here
+///         }
+///     }         
+/// }
+/// ```
+pub fn make_client_config(config: Option<OutboundTlsConfig>) -> Option<Arc<ClientConfig>> {
     match config {
         Some(cfg) if cfg.allow_insecure => {
             let mut config = ClientConfig::default();
@@ -47,15 +76,27 @@ pub fn make_client_config(config: Option<TlsConfig>) -> Option<Arc<ClientConfig>
     }
 }
 
-pub fn make_server_config(config: Option<TlsConfig>) -> Option<Arc<ServerConfig>> {
+/// Create ServerConfig for rustls based on the configurations in the config.json file. The function
+/// will read the tls configuration under inbound,
+///
+/// ```json
+/// {
+///     inbound: {
+///         tls: {
+///             # Configurations here
+///         }
+///     }         
+/// }
+/// ```
+pub fn make_server_config(config: Option<InboundTlsConfig>) -> Option<Arc<ServerConfig>> {
     return match config {
-        Some(cfg) if cfg.key_path.is_some() && cfg.cert_path.is_some() => {
-            let certificates = match load_certs(&cfg.cert_path.as_ref().unwrap()) {
+        Some(cfg) => {
+            let certificates = match load_certs(&cfg.cert_path) {
                 Ok(certs) => certs,
                 Err(_) => return None,
             };
 
-            let key = match load_private_key(&cfg.key_path.as_ref().unwrap()) {
+            let key = match load_private_key(&cfg.key_path) {
                 Ok(key) => key,
                 Err(_) => return None,
             };
@@ -67,7 +108,6 @@ pub fn make_server_config(config: Option<TlsConfig>) -> Option<Arc<ServerConfig>
                 Err(_) => None,
             }
         }
-        Some(_) => None,
         None => None,
     };
 }

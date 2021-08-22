@@ -1,4 +1,6 @@
 use crate::protocol::common::addr::IpAddress;
+use crate::protocol::common::atype::Atype;
+use crate::protocol::common::command::Command;
 
 #[derive(Debug, Copy, Clone)]
 pub enum TransportProtocol {
@@ -7,9 +9,9 @@ pub enum TransportProtocol {
 }
 
 pub struct InboundRequest {
-    pub atype: u8,
+    pub atype: Atype,
     pub addr: IpAddress,
-    pub command: u8,
+    pub command: Command,
     pub port: u16,
     pub transport_protocol: TransportProtocol,
 }
@@ -17,9 +19,9 @@ pub struct InboundRequest {
 impl InboundRequest {
     #[inline]
     pub fn new(
-        atype: u8,
+        atype: Atype,
         addr: IpAddress,
-        command: u8,
+        command: Command,
         port: u16,
         transport_protocol: TransportProtocol,
     ) -> InboundRequest {

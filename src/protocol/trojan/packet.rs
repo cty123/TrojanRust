@@ -10,9 +10,8 @@ use log::{info, warn};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::UdpSocket;
 
-use crate::protocol::common::addr::{
-    IpAddress, ATYPE_DOMAIN_NAME, ATYPE_IPV4, ATYPE_IPV6, IPV4_SIZE, IPV6_SIZE,
-};
+use crate::protocol::common::addr::{IpAddress, IPV4_SIZE, IPV6_SIZE};
+use crate::protocol::common::atype::Atype;
 use crate::protocol::common::stream::OutboundStream;
 
 const BYTES_ATYPE: usize = 1;
@@ -22,13 +21,13 @@ const BYTES_PAYLOAD_SIZE: usize = 2;
 const BYTES_CRLF: usize = 2;
 
 enum State {
-    ATYPE,
-    ADDR_SIZE,
-    ADDR,
-    PORT,
-    PAYLOAD_SIZE,
+    Atype,
+    AddrSize,
+    Addr,
+    Port,
+    PayloadSize,
     CRLF,
-    PAYLOAD,
+    Payload,
 }
 
 pub struct PacketTrojanOutboundStream {
@@ -39,7 +38,7 @@ pub struct PacketTrojanOutboundStream {
     state: State,
 
     // UDP request packet info
-    atype: u8,
+    atype: Atype,
     addr: IpAddress,
     addr_size: usize,
     port: u16,
@@ -55,12 +54,10 @@ impl AsyncRead for PacketTrojanOutboundStream {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<Result<()>> {
-        buf.put_slice(&[self.atype]);
-        buf.put_slice(&self.addr.to_bytes());
+        buf.put_slice(&[self.atype.to_byte()]);
+        buf.put_slice(&self.addr.to_bytes_vec());
         buf.put_slice(&self.port.to_be_bytes());
-        buf.put_slice(&[0, 0]);
-        buf.put_slice(&[0x0D, 0x0A]);
-        
+        buf.put_slice(&[0, 0, 0x0D, 0x0A]);
         let header_len = buf.filled().len();
 
         return match self.udp_socket.poll_recv_from(cx, buf) {
@@ -73,7 +70,7 @@ impl AsyncRead for PacketTrojanOutboundStream {
                     Poll::Ready(Ok(()))
                 }
                 Err(e) => {
-                    info!("Failed to read, {}", e);
+                    info!("Failed to read from udp, {}", e);
                     Poll::Ready(Err(e))
                 }
             },
@@ -92,58 +89,49 @@ impl AsyncWrite for PacketTrojanOutboundStream {
 
         while pos < buf.len() {
             match &self.state {
-                State::ATYPE => {
-                    self.atype = buf[pos];
-                    self.state = State::ADDR_SIZE;
+                State::Atype => {
+                    self.atype = match Atype::from(buf[pos]) {
+                        Ok(atype) => atype,
+                        Err(e) => return Poll::Ready(Err(e)),
+                    };
+                    self.state = State::AddrSize;
                     pos += 1;
                 }
-                State::ADDR_SIZE => {
+                State::AddrSize => {
                     self.addr_size = match self.atype {
-                        ATYPE_IPV4 => IPV4_SIZE,
-                        ATYPE_IPV6 => IPV6_SIZE,
-                        ATYPE_DOMAIN_NAME => {
+                        Atype::IPv4 => IPV4_SIZE,
+                        Atype::IPv6 => IPV6_SIZE,
+                        Atype::DomainName => {
                             pos += 1;
                             usize::from(buf[pos])
                         }
-                        _ => {
-                            return Poll::Ready(Err(Error::new(
-                                ErrorKind::InvalidInput,
-                                "Unsupported address type",
-                            )))
-                        }
                     };
-                    self.state = State::ADDR;
+                    self.state = State::Addr;
                 }
-                State::ADDR => {
+                State::Addr => {
                     let addr_size = self.addr_size;
                     pos = self.read_field(pos, addr_size, buf);
 
                     if self.buffer.len() >= self.addr_size {
                         self.addr = match self.atype {
-                            ATYPE_IPV4 => IpAddress::from_u32(self.buffer.get_u32()),
-                            ATYPE_IPV6 => IpAddress::from_u128(self.buffer.get_u128()),
-                            ATYPE_DOMAIN_NAME => IpAddress::from_vec(self.buffer.to_vec()),
-                            _ => {
-                                return Poll::Ready(Err(Error::new(
-                                    ErrorKind::InvalidInput,
-                                    "Unsupported address type",
-                                )))
-                            }
+                            Atype::IPv4 => IpAddress::from_u32(self.buffer.get_u32()),
+                            Atype::IPv6 => IpAddress::from_u128(self.buffer.get_u128()),
+                            Atype::DomainName => IpAddress::from_vec(self.buffer.to_vec()),
                         };
                         self.buffer.clear();
-                        self.state = State::PORT;
+                        self.state = State::Port;
                     }
                 }
-                State::PORT => {
+                State::Port => {
                     pos = self.read_field(pos, BYTES_PORT, buf);
 
                     if self.buffer.len() >= BYTES_PORT {
                         self.port = self.buffer.get_u16();
                         self.buffer.clear();
-                        self.state = State::PAYLOAD_SIZE;
+                        self.state = State::PayloadSize;
                     }
                 }
-                State::PAYLOAD_SIZE => {
+                State::PayloadSize => {
                     pos = self.read_field(pos, BYTES_PAYLOAD_SIZE, buf);
 
                     if self.buffer.len() >= BYTES_PAYLOAD_SIZE {
@@ -157,18 +145,22 @@ impl AsyncWrite for PacketTrojanOutboundStream {
 
                     if self.buffer.len() >= BYTES_CRLF {
                         self.buffer.clear();
-                        self.state = State::PAYLOAD;
+                        self.state = State::Payload;
                     }
                 }
-                State::PAYLOAD => {
+                State::Payload => {
                     let size = self.payload_size;
                     pos = self.read_field(pos, size, buf);
 
                     // When we already have all the bytes
                     if self.buffer.len() >= size {
-                        let destination = format!("{}:{}", self.addr.to_string(), self.port)
-                            .parse()
-                            .unwrap();
+                        let destination =
+                            match format!("{}:{}", self.addr.to_string(), self.port).parse() {
+                                Ok(dest) => dest,
+                                Err(e) => {
+                                    return Poll::Ready(Err(Error::new(ErrorKind::InvalidData, e)))
+                                }
+                            };
 
                         match self
                             .udp_socket
@@ -184,7 +176,7 @@ impl AsyncWrite for PacketTrojanOutboundStream {
                             Poll::Pending => return Poll::Pending,
                         }
                         self.buffer.clear();
-                        self.state = State::ATYPE;
+                        self.state = State::Atype;
                     }
                 }
             }
@@ -208,9 +200,9 @@ impl PacketTrojanOutboundStream {
             udp_socket: UdpSocket::bind("0.0.0.0:0").await.unwrap(),
 
             buffer: BytesMut::with_capacity(1024),
-            state: State::ATYPE,
+            state: State::Atype,
 
-            atype: ATYPE_IPV4,
+            atype: Atype::IPv4,
             addr: IpAddress::from_u32(0),
             addr_size: 0,
             port: 0,

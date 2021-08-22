@@ -1,14 +1,15 @@
 use bytes::{BufMut, BytesMut};
 
 use crate::protocol::common::addr::IpAddress;
-use crate::protocol::common::command::{BIND, CONNECT, UDP};
+use crate::protocol::common::atype::Atype;
+use crate::protocol::common::command::Command;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 
 pub struct Request {
     version: u8,
-    command: u8,
+    command: Command,
     rsv: u8,
-    atype: u8,
+    atype: Atype,
     addr: IpAddress,
     port: u16,
 }
@@ -59,7 +60,7 @@ impl RequestAck {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = BytesMut::with_capacity(128);
         buf.put_slice(&[self.version, self.rep, self.rsv, 1]);
-        buf.put_slice(&self.addr.to_bytes());
+        buf.put_slice(&self.addr.to_bytes_vec());
         buf.put_u16(self.port);
         return buf.to_vec();
     }
@@ -68,9 +69,9 @@ impl RequestAck {
 impl Request {
     pub fn new(
         version: u8,
-        command: u8,
+        command: Command,
         rsv: u8,
-        atype: u8,
+        atype: Atype,
         port: u16,
         addr: IpAddress,
     ) -> Request {
@@ -91,19 +92,18 @@ impl Request {
 
     #[inline]
     pub fn dump_request(&self) -> String {
-        let command = match self.command {
-            CONNECT => "Connect",
-            BIND => "Bind",
-            UDP => "UDP Associate",
-            _ => "Unsupported",
-        };
-        return format!("[{} => {}:{}]", command, self.addr, self.port);
+        return format!(
+            "[{} => {}:{}]",
+            self.command.to_string(),
+            self.addr,
+            self.port
+        );
     }
 
     #[inline]
     pub fn inbound_request(self) -> InboundRequest {
         return match self.command {
-            UDP => InboundRequest::new(
+            Command::Udp => InboundRequest::new(
                 self.atype,
                 self.addr,
                 self.command,

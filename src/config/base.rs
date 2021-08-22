@@ -2,6 +2,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::proxy::base::SupportedProtocols;
 
+#[derive(Serialize, Deserialize)]
+pub struct Config {
+    pub inbound: InboundConfig,
+    pub outbound: OutboundConfig,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InboundConfig {
     pub protocol: SupportedProtocols,
@@ -9,7 +15,7 @@ pub struct InboundConfig {
     pub port: u16,
     pub secret: Option<String>,
 
-    pub tls: Option<TlsConfig>,
+    pub tls: Option<InboundTlsConfig>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -18,19 +24,17 @@ pub struct OutboundConfig {
     pub address: Option<String>,
     pub port: Option<u16>,
 
-    pub tls: Option<TlsConfig>,
+    pub tls: Option<OutboundTlsConfig>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct TlsConfig {
-    pub cert_path: Option<String>,
-    pub key_path: Option<String>,
-    pub host_name: Option<String>,
-    pub allow_insecure: bool,
+pub struct InboundTlsConfig {
+    pub cert_path: String,
+    pub key_path: String,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Config {
-    pub inbound: InboundConfig,
-    pub outbound: OutboundConfig,
+#[derive(Serialize, Deserialize, Clone)]
+pub struct OutboundTlsConfig {
+    pub host_name: String,
+    pub allow_insecure: bool,
 }
