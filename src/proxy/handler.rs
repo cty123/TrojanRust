@@ -19,20 +19,25 @@ use crate::proxy::base::SupportedProtocols;
 #[derive(Clone)]
 pub struct Handler {
     protocol: SupportedProtocols,
-    tls: bool,
     tls_config: Option<Arc<ClientConfig>>,
     addr: Option<String>,
     port: Option<u16>,
+    host_name: Option<String>,
 }
 
 impl Handler {
     pub fn new(config: OutboundConfig) -> Handler {
+        let (tls_config, host_name) = match config.tls {
+            Some(cfg) => (Some(make_client_config(&cfg)), Some(cfg.host_name)),
+            None => (None, None),
+        };
+
         Handler {
             protocol: config.protocol,
             addr: config.address,
             port: config.port,
-            tls: config.tls.is_some(),
-            tls_config: make_client_config(config.tls),
+            tls_config,
+            host_name,
         }
     }
 
@@ -59,8 +64,8 @@ impl Handler {
         self,
         request: &InboundRequest,
     ) -> Result<Box<dyn OutboundStream>> {
-        return match self.tls {
-            true if self.tls_config.is_some() && self.addr.is_some() && self.port.is_some() => {
+        return match self.tls_config.is_some() {
+            true if self.addr.is_some() && self.port.is_some() => {
                 Handler::tls(
                     &self.addr.unwrap(),
                     self.port.unwrap(),
@@ -123,7 +128,7 @@ impl Handler {
     ) -> Result<Box<dyn OutboundStream>> {
         let config = TlsConnector::from(config);
         let stream = TcpStream::connect((addr, port)).await?;
-        let domain = DNSNameRef::try_from_ascii_str("example.com")
+        let domain = DNSNameRef::try_from_ascii_str("")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid dnsname"))?;
         let tls_stream = config.connect(domain, stream).await?;
         Handler::handle_protocol(tls_stream, protocol, request).await

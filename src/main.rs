@@ -13,7 +13,7 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     let matches = App::new("Trojan Rust")
-        .version("0.2.4")
+        .version("0.3.0")
         .author("cty123")
         .about("Trojan Rust is a rust implementation of the trojan protocol to circumvent GFW")
         .arg(

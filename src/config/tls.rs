@@ -56,23 +56,19 @@ impl ServerCertVerifier for NoCertificateVerification {
 ///     }         
 /// }
 /// ```
-pub fn make_client_config(config: Option<OutboundTlsConfig>) -> Option<Arc<ClientConfig>> {
-    match config {
-        Some(cfg) if cfg.allow_insecure => {
-            let mut config = ClientConfig::default();
-            config
-                .dangerous()
-                .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
-            Some(Arc::new(config))
-        }
-        Some(_) => {
-            let mut config = ClientConfig::default();
-            config
-                .root_store
-                .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-            Some(Arc::new(config))
-        }
-        None => None,
+pub fn make_client_config(config: &OutboundTlsConfig) -> Arc<ClientConfig> {
+    if config.allow_insecure {
+        let mut config = ClientConfig::default();
+        config
+            .dangerous()
+            .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
+        Arc::new(config)
+    } else {
+        let mut config = ClientConfig::default();
+        config
+            .root_store
+            .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+        Arc::new(config)
     }
 }
 
