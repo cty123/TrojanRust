@@ -84,28 +84,23 @@ pub fn make_client_config(config: &OutboundTlsConfig) -> Arc<ClientConfig> {
 ///     }         
 /// }
 /// ```
-pub fn make_server_config(config: Option<InboundTlsConfig>) -> Option<Arc<ServerConfig>> {
-    return match config {
-        Some(cfg) => {
-            let certificates = match load_certs(&cfg.cert_path) {
-                Ok(certs) => certs,
-                Err(_) => return None,
-            };
-
-            let key = match load_private_key(&cfg.key_path) {
-                Ok(key) => key,
-                Err(_) => return None,
-            };
-
-            let mut cfg = rustls::ServerConfig::new(NoClientAuth::new());
-
-            match cfg.set_single_cert(certificates, key) {
-                Ok(_) => Some(Arc::new(cfg)),
-                Err(_) => None,
-            }
-        }
-        None => None,
+pub fn make_server_config(config: &InboundTlsConfig) -> Option<Arc<ServerConfig>> {
+    let certificates = match load_certs(&config.cert_path) {
+        Ok(certs) => certs,
+        Err(_) => return None,
     };
+
+    let key = match load_private_key(&config.key_path) {
+        Ok(key) => key,
+        Err(_) => return None,
+    };
+
+    let mut cfg = rustls::ServerConfig::new(NoClientAuth::new());
+
+    match cfg.set_single_cert(certificates, key) {
+        Ok(_) => Some(Arc::new(cfg)),
+        Err(_) => None,
+    }
 }
 
 fn load_certs(path: &str) -> std::io::Result<Vec<Certificate>> {

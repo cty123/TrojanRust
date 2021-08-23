@@ -2,25 +2,20 @@ use std::io::Result;
 use std::sync::Arc;
 
 use log::{info, warn};
-use rustls::ServerConfig;
 use tokio::net::TcpListener;
-use tokio_rustls::TlsAcceptor;
 
 use crate::config::base::{InboundConfig, OutboundConfig};
-use crate::config::tls::make_server_config;
 use crate::protocol::common::stream::InboundStream;
 use crate::proxy::acceptor::Acceptor;
 use crate::proxy::base::SupportedProtocols;
 use crate::proxy::handler::Handler;
 
 pub struct TcpServer {
-    local_addr: String,
-    local_port: u16,
+    local_addr_port: (String, u16),
     protocol: SupportedProtocols,
-    tls: bool,
-    tls_config: Option<Arc<ServerConfig>>,
     secret: Option<String>,
-    handler: Handler,
+    acceptor: Arc<Acceptor>,
+    handler: Arc<Handler>,
 }
 
 impl TcpServer {
@@ -28,36 +23,33 @@ impl TcpServer {
         inbound_config: InboundConfig,
         outbound_config: OutboundConfig,
     ) -> Result<TcpServer> {
-        let handler = Handler::new(outbound_config);
+        let handler = Arc::from(Handler::new(&outbound_config)?);
+        let acceptor = Arc::from(Acceptor::new(&inbound_config));
+
+        let secret = match inbound_config.secret {
+            Some(secret) => Some(secret),
+            None => None,
+        };
 
         return Ok(TcpServer {
-            local_addr: inbound_config.address,
-            local_port: inbound_config.port,
-            secret: inbound_config.secret,
+            local_addr_port: (inbound_config.address, inbound_config.port),
             protocol: inbound_config.protocol,
-            tls: inbound_config.tls.is_some(),
-            tls_config: make_server_config(inbound_config.tls),
+            secret,
             handler,
+            acceptor,
         });
     }
 
     pub async fn start(self) -> Result<()> {
-        let listener =
-            TcpListener::bind(format!("{}:{}", self.local_addr, self.local_port)).await?;
+        let (local_addr, local_port) = self.local_addr_port;
 
-        let acceptor = match self.tls_config {
-            Some(config) => Acceptor::new(
-                self.protocol,
-                self.local_port,
-                Some(TlsAcceptor::from(config)),
-                self.secret,
-            ),
-            None => Acceptor::new(self.protocol, self.local_port, None, self.secret),
-        };
+        let listener = TcpListener::bind(format!("{}:{}", local_addr, local_port)).await?;
+
+        let acceptor = self.acceptor;
 
         info!(
             "TCP server started on {}:{}, ready to accept input stream",
-            self.local_addr, self.local_port
+            local_addr, local_port
         );
 
         loop {
@@ -65,18 +57,19 @@ impl TcpServer {
 
             info!("Received new connection from {}", addr);
 
-            let acceptor = acceptor.clone();
-            let handler = self.handler.clone();
+            let acceptor_clone = Arc::clone(&acceptor);
+            let handler = Arc::clone(&self.handler);
 
             tokio::spawn(async move {
-                let mut inbound_stream = match acceptor.accept(socket).await {
+                let mut inbound_stream = match acceptor_clone.accept(socket).await {
                     Ok(stream) => stream,
                     Err(e) => {
                         warn!("Failed to accept inbound connection from {}: {}", addr, e);
                         return;
                     }
                 };
-                match TcpServer::dispatch(&mut inbound_stream, handler).await {
+
+                match handler.dispatch(&mut inbound_stream).await {
                     Ok(_) => {
                         info!("Connection to {} has finished", addr);
                     }
@@ -86,30 +79,5 @@ impl TcpServer {
                 }
             });
         }
-    }
-
-    async fn dispatch(
-        inbound_stream: &mut Box<dyn InboundStream>,
-        outbound_handler: Handler,
-    ) -> Result<()> {
-        let request = inbound_stream.handshake().await?;
-
-        let outbound_stream = match outbound_handler.handle(&request).await {
-            Ok(stream) => stream,
-            Err(e) => return Err(e),
-        };
-
-        let (mut source_read, mut source_write) = tokio::io::split(inbound_stream);
-        let (mut target_read, mut target_write) = tokio::io::split(outbound_stream);
-
-        return match futures::future::join(
-            tokio::io::copy(&mut source_read, &mut target_write),
-            tokio::io::copy(&mut target_read, &mut source_write),
-        )
-        .await
-        {
-            (Err(e), _) | (_, Err(e)) => Err(e),
-            _ => Ok(()),
-        };
     }
 }
