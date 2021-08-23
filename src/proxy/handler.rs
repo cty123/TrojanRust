@@ -126,53 +126,49 @@ impl Handler {
         &self,
         request: &InboundRequest,
     ) -> Result<Box<dyn OutboundStream>> {
-        return match (self.tls_config.as_ref(), self.addr_port.as_ref(), self.host_name.as_ref()) {
-            (Some(_), Some(_), Some(_)) => self.tls(request).await,
-            (Some(_), _, _) => {
+        let addr_port = match &self.addr_port {
+            Some(addr_port) => addr_port.clone(),
+            None => request.addr_port(),
+        };
+
+        let connection = match TcpStream::connect(&addr_port).await {
+            Ok(connection) => {
+                let (addr, port) = addr_port;
+                info!("Established connection to remote host at {}:{}", addr, port);
+                connection
+            }
+            Err(e) => {
+                let (addr, port) = addr_port;
+                return Err(Error::new(
+                    ErrorKind::ConnectionReset,
+                    format!("Failed to connect to {}:{}, {}", addr, port, e),
+                ));
+            }
+        };
+
+        return match (self.tls_config.as_ref(), self.host_name.as_ref()) {
+            (Some(tls), Some(hname)) => {
+                let connector = TlsConnector::from(Arc::clone(tls));
+                let domain = match DNSNameRef::try_from_ascii_str(hname) {
+                    Ok(domain) => domain,
+                    Err(_) => {
+                        return Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            "Failed to parse host name",
+                        ))
+                    }
+                };
+                let tls_stream = connector.connect(domain, connection).await?;
+                self.handle_protocol(tls_stream, request).await
+            },
+            (Some(_), _) => {
                 return Err(Error::new(
                     ErrorKind::InvalidInput,
                     "Failed to find destination address, destination port or host name from configuration",
                 ))
             },
-            (None, Some(_), _) => self.tcp(request).await,
-            (None, _, _) => self.tcp(request).await,
+            (None, _) => self.handle_protocol(connection, request).await
         };
-    }
-
-    #[inline]
-    async fn tcp(&self, request: &InboundRequest) -> Result<Box<dyn OutboundStream>> {
-        let (addr, port) = self.addr_port.as_ref().unwrap();
-        let connection = match TcpStream::connect((addr.clone(), port.clone())).await {
-            Ok(connection) => {
-                info!("Established connection to remote host at {}:{}", addr, port);
-                connection
-            }
-            Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionReset,
-                    format!("Failed to connect to {}:{}, {}", addr, port, e),
-                ))
-            }
-        };
-
-        return self.handle_protocol(connection, request).await;
-    }
-
-    #[inline]
-    async fn tls(&self, request: &InboundRequest) -> Result<Box<dyn OutboundStream>> {
-        let connector = TlsConnector::from(Arc::clone(self.tls_config.as_ref().unwrap()));
-        let stream = TcpStream::connect(self.addr_port.as_ref().unwrap().clone()).await?;
-        let domain = match DNSNameRef::try_from_ascii_str(self.host_name.as_ref().unwrap()) {
-            Ok(domain) => domain,
-            Err(_) => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    "Failed to parse host name",
-                ))
-            }
-        };
-        let tls_stream = connector.connect(domain, stream).await?;
-        self.handle_protocol(tls_stream, request).await
     }
 
     #[inline]
