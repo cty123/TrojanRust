@@ -23,6 +23,7 @@ pub struct OutboundConfig {
     pub protocol: SupportedProtocols,
     pub address: Option<String>,
     pub port: Option<u16>,
+    pub secret: Option<String>,
 
     pub tls: Option<OutboundTlsConfig>,
 }

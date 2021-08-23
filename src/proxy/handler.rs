@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use log::info;
 use rustls::ClientConfig;
+use sha2::{Digest, Sha224};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_rustls::{webpki::DNSNameRef, TlsConnector};
@@ -25,6 +26,7 @@ pub struct Handler {
     tls_config: Option<Arc<ClientConfig>>,
     addr_port: Option<(String, u16)>,
     host_name: Option<String>,
+    secret: Arc<Vec<u8>>,
 }
 
 impl Handler {
@@ -54,11 +56,26 @@ impl Handler {
             (None, None) => None,
         };
 
+        let secret = match outbound.protocol {
+            SupportedProtocols::TROJAN if outbound.secret.is_some() => {
+                let secret = outbound.secret.as_ref().unwrap();
+                let hashvalue = Sha224::digest(secret.as_bytes());
+                hashvalue
+                    .iter()
+                    .map(|x| format!("{:02x}", x))
+                    .collect::<String>()
+                    .as_bytes()
+                    .to_vec()
+            }
+            _ => Vec::new(),
+        };
+
         Ok(Handler {
             protocol: outbound.protocol,
             addr_port,
             tls_config,
             host_name,
+            secret: Arc::from(secret),
         })
     }
 
@@ -110,35 +127,22 @@ impl Handler {
         request: &InboundRequest,
     ) -> Result<Box<dyn OutboundStream>> {
         return match (self.tls_config.as_ref(), self.addr_port.as_ref(), self.host_name.as_ref()) {
-            (Some(tls), Some(dest), Some(dns)) => {
-                Handler::tls(
-                    dest,
-                    request,
-                    Arc::clone(tls),
-                    self.protocol,
-                    &dns
-                )
-                .await
-            }
+            (Some(_), Some(_), Some(_)) => self.tls(request).await,
             (Some(_), _, _) => {
                 return Err(Error::new(
                     ErrorKind::InvalidInput,
                     "Failed to find destination address, destination port or host name from configuration",
                 ))
             },
-            (None, Some(dest), _) => Handler::tcp(dest, request, self.protocol).await,
-            (None, _, _) => Handler::tcp(&request.addr_port(), request, self.protocol).await,
+            (None, Some(_), _) => self.tcp(request).await,
+            (None, _, _) => self.tcp(request).await,
         };
     }
 
     #[inline]
-    async fn tcp(
-        addr_port: &(String, u16),
-        request: &InboundRequest,
-        protocol: SupportedProtocols,
-    ) -> Result<Box<dyn OutboundStream>> {
-        let (addr, port) = &addr_port;
-        let connection = match TcpStream::connect(&addr_port).await {
+    async fn tcp(&self, request: &InboundRequest) -> Result<Box<dyn OutboundStream>> {
+        let (addr, port) = self.addr_port.as_ref().unwrap();
+        let connection = match TcpStream::connect((addr.clone(), port.clone())).await {
             Ok(connection) => {
                 info!("Established connection to remote host at {}:{}", addr, port);
                 connection
@@ -151,20 +155,14 @@ impl Handler {
             }
         };
 
-        return Handler::handle_protocol(connection, protocol, request).await;
+        return self.handle_protocol(connection, request).await;
     }
 
     #[inline]
-    async fn tls(
-        addr_port: &(String, u16),
-        request: &InboundRequest,
-        config: Arc<ClientConfig>,
-        protocol: SupportedProtocols,
-        host_name: &str,
-    ) -> Result<Box<dyn OutboundStream>> {
-        let connector = TlsConnector::from(config);
-        let stream = TcpStream::connect(addr_port).await?;
-        let domain = match DNSNameRef::try_from_ascii_str(host_name) {
+    async fn tls(&self, request: &InboundRequest) -> Result<Box<dyn OutboundStream>> {
+        let connector = TlsConnector::from(Arc::clone(self.tls_config.as_ref().unwrap()));
+        let stream = TcpStream::connect(self.addr_port.as_ref().unwrap().clone()).await?;
+        let domain = match DNSNameRef::try_from_ascii_str(self.host_name.as_ref().unwrap()) {
             Ok(domain) => domain,
             Err(_) => {
                 return Err(Error::new(
@@ -174,22 +172,34 @@ impl Handler {
             }
         };
         let tls_stream = connector.connect(domain, stream).await?;
-        Handler::handle_protocol(tls_stream, protocol, request).await
+        self.handle_protocol(tls_stream, request).await
     }
 
     #[inline]
     async fn handle_protocol<IO>(
+        &self,
         stream: IO,
-        protocol: SupportedProtocols,
         request: &InboundRequest,
     ) -> Result<Box<dyn OutboundStream>>
     where
         IO: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static,
     {
-        return match protocol {
+        return match self.protocol {
             SupportedProtocols::DIRECT => Ok(DirectOutboundStream::new(stream)),
-            SupportedProtocols::TROJAN => Ok(TrojanOutboundStream::new(stream, request)),
-            SupportedProtocols::SOCKS => Err(Error::new(ErrorKind::Unsupported, "Unsupported")),
+            SupportedProtocols::TROJAN => {
+                if self.secret.len() != 56 {
+                    return Err(Error::new(
+                        ErrorKind::InvalidInput,
+                        "Hex in trojan protocol is not 56 bytes",
+                    ));
+                }
+                let mut hex = [0u8; 56];
+                hex[..56].copy_from_slice(self.secret.as_slice());
+                Ok(TrojanOutboundStream::new(stream, request, hex))
+            }
+            SupportedProtocols::SOCKS => {
+                Err(Error::new(ErrorKind::Unsupported, "Unsupported protocol"))
+            }
         };
     }
 }
