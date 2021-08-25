@@ -46,19 +46,43 @@ Quick short script for your convenience,
     
     openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
 
-## Sample config file
+## Sample for Trojan
+### Server config
 ```json
 {
     "inbound": {
-        "protocol": "SOCKS" || "TROJAN",
+        "protocol": "TROJAN",
         "address": "0.0.0.0",
+        "secret": "123123",
         "port": 8081,
-        "tls": true,
-        "cert_path": "/path/to/file/cert.pem",
-        "key_path": "/path/to/file/key.pem"
+        "tls": {
+            "cert_path": "./cert.pem",
+            "key_path": "./key.pem"
+        }
     },
     "outbound": {
         "protocol": "DIRECT"
+    }
+}
+```
+
+### Client config
+```json
+{
+    "inbound": {
+        "protocol": "SOCKS",
+        "address": "0.0.0.0",
+        "port": 8081
+    },
+    "outbound": {
+        "protocol": "TROJAN",
+        "address": "0.0.0.0",
+        "port": 8082,
+        "secret": "123123",
+        "tls": {
+            "host_name": "example.com",
+            "allow_insecure": true
+        }
     }
 }
 ```
