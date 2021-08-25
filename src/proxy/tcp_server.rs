@@ -58,7 +58,7 @@ impl TcpServer {
 
                 match handler.dispatch(&mut inbound_stream).await {
                     Ok(_) => {
-                        info!("Connection to {} has finished", addr);
+                        info!("Connection from {} has finished", addr);
                     }
                     Err(e) => {
                         warn!("Failed to handle the inbound stream: {}", e);

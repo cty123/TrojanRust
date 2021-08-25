@@ -1,5 +1,6 @@
 use std::io::{Error, ErrorKind, Result};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
@@ -12,7 +13,7 @@ use crate::protocol::trojan::parser::parse;
 
 pub struct TrojanInboundStream<IO> {
     stream: BufReader<IO>,
-    secret: [u8; 56],
+    secret: Arc<Vec<u8>>,
 }
 
 impl<IO> AsyncRead for TrojanInboundStream<IO>
@@ -77,12 +78,10 @@ impl<IO> TrojanInboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    pub fn new(stream: IO, secret: &[u8]) -> Box<dyn InboundStream> {
-        let mut hex = [0u8; 56];
-        hex[..secret.len()].clone_from_slice(secret);
+    pub fn new(stream: IO, secret: Arc<Vec<u8>>) -> Box<dyn InboundStream> {
         return Box::new(TrojanInboundStream {
-            stream: tokio::io::BufReader::with_capacity(2048, stream),
-            secret: hex,
+            stream: tokio::io::BufReader::with_capacity(256, stream),
+            secret,
         });
     }
 }

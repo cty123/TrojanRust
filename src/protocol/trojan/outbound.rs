@@ -76,9 +76,13 @@ impl<IO> TrojanOutboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    pub fn new(stream: IO, request: &InboundRequest, secret: [u8; 56]) -> Box<dyn OutboundStream> {
+    pub fn new(
+        stream: IO,
+        request: &InboundRequest,
+        secret: [u8; 56],
+    ) -> Box<dyn OutboundStream> {
         Box::new(TrojanOutboundStream {
-            stream: BufReader::with_capacity(1024, stream),
+            stream: BufReader::with_capacity(256, stream),
             request: Request::from_request(request, secret),
             header_written: false,
         })

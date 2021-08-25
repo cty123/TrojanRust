@@ -69,7 +69,6 @@ impl Acceptor {
                 let tls_stream = self
                     .tls_acceptor
                     .as_ref()
-                    .as_ref()
                     .unwrap()
                     .accept(inbound_stream)
                     .await?;
@@ -84,11 +83,14 @@ impl Acceptor {
                     .unwrap()
                     .accept(inbound_stream)
                     .await?;
-                Ok(TrojanInboundStream::new(tls_stream, self.secret.as_slice()))
+                Ok(TrojanInboundStream::new(
+                    tls_stream,
+                    Arc::clone(&self.secret),
+                ))
             }
             SupportedProtocols::TROJAN => Ok(TrojanInboundStream::new(
                 inbound_stream,
-                self.secret.as_slice(),
+                Arc::clone(&self.secret),
             )),
             // Shutdown the connection if the protocol is currently unsupported
             _ => Err(Error::new(
