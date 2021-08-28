@@ -26,7 +26,7 @@ where
 {
     pub fn new(stream: IO) -> Box<dyn OutboundStream> {
         return Box::new(DirectOutboundStream {
-            stream: BufReader::with_capacity(1024, stream),
+            stream: BufReader::with_capacity(256, stream),
         });
     }
 }

@@ -1,5 +1,6 @@
 use std::io::{Error, ErrorKind, Result};
 use std::sync::Arc;
+use std::convert::TryInto;
 
 use log::info;
 use rustls::ClientConfig;
@@ -22,24 +23,26 @@ use crate::proxy::base::SupportedProtocols;
 /// establishing a tranport level connection and escalate it to application data stream.
 #[derive(Clone)]
 pub struct Handler {
+    addr_port: Option<(String, u16)>,
     protocol: SupportedProtocols,
     tls_config: Option<Arc<ClientConfig>>,
-    addr_port: Option<(String, u16)>,
     host_name: Option<String>,
-    secret: Arc<Vec<u8>>,
+    secret: Vec<u8>,
 }
 
 impl Handler {
     /// Instantiate a new Handler instance based on OutboundConfig passed by the user. It will evaluate the
     /// TLS option particularly to be able to later determine whether it should escalate the connection to
     /// TLS first or not.
-    pub fn new(outbound: &OutboundConfig) -> Result<Handler> {
-        let (tls_config, host_name) = match &outbound.tls {
-            Some(cfg) => (Some(make_client_config(&cfg)), Some(cfg.host_name.clone())),
+    pub fn new(outbound: OutboundConfig) -> Result<Handler> {
+        // Get outbound TLS configuration and host dns name if TLS is enabled
+        let (tls_config, host_name) = match outbound.tls {
+            Some(cfg) => (Some(make_client_config(&cfg)), Some(cfg.host_name)),
             None => (None, None),
         };
 
-        let addr_port = match (outbound.address.clone(), outbound.port) {
+        // Attempt to extract destination address and port from OutboundConfig.
+        let addr_port = match (outbound.address, outbound.port) {
             (Some(addr), Some(port)) => Some((addr, port)),
             (Some(_), None) => {
                 return Err(Error::new(
@@ -53,9 +56,11 @@ impl Handler {
                     "Missing address while port is present",
                 ))
             }
+            // No destination address and port specified, will use the address and port in each request
             (None, None) => None,
         };
 
+        // Extract the plaintext of the secret and process it
         let secret = match outbound.protocol {
             SupportedProtocols::TROJAN if outbound.secret.is_some() => {
                 let secret = outbound.secret.as_ref().unwrap();
@@ -75,7 +80,7 @@ impl Handler {
             addr_port,
             tls_config,
             host_name,
-            secret: Arc::from(secret),
+            secret,
         })
     }
 
@@ -126,19 +131,17 @@ impl Handler {
         &self,
         request: &InboundRequest,
     ) -> Result<Box<dyn OutboundStream>> {
-        let addr_port = match &self.addr_port {
-            Some(addr_port) => addr_port.clone(),
-            None => request.addr_port(),
+        let (addr, port) = match &self.addr_port {
+            Some((a, p)) => (a.clone(), p.clone()),
+            None => request.addr_port()
         };
 
-        let connection = match TcpStream::connect(&addr_port).await {
+        let connection = match TcpStream::connect((addr.as_ref(), port)).await {
             Ok(connection) => {
-                let (addr, port) = addr_port;
                 info!("Established connection to remote host at {}:{}", addr, port);
                 connection
             }
             Err(e) => {
-                let (addr, port) = addr_port;
                 return Err(Error::new(
                     ErrorKind::ConnectionReset,
                     format!("Failed to connect to {}:{}, {}", addr, port, e),
@@ -189,9 +192,7 @@ impl Handler {
                         "Hex in trojan protocol is not 56 bytes",
                     ));
                 }
-                let mut hex = [0u8; 56];
-                hex[..56].copy_from_slice(self.secret.as_slice());
-                Ok(TrojanOutboundStream::new(stream, request, hex))
+                Ok(TrojanOutboundStream::new(stream, request, self.secret.as_slice().try_into().unwrap()))
             }
             SupportedProtocols::SOCKS => {
                 Err(Error::new(ErrorKind::Unsupported, "Unsupported protocol"))

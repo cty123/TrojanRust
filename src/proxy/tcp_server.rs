@@ -19,7 +19,7 @@ impl TcpServer {
         inbound_config: InboundConfig,
         outbound_config: OutboundConfig,
     ) -> Result<TcpServer> {
-        let handler = Arc::from(Handler::new(&outbound_config)?);
+        let handler = Arc::from(Handler::new(outbound_config)?);
         let acceptor = Arc::from(Acceptor::new(&inbound_config));
 
         return Ok(TcpServer {
