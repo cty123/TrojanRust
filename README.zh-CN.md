@@ -1,6 +1,6 @@
 # trojan-rust
 
-![Build](https://github.com/cty123/TrojanRust/actions/workflows/build.yml/badge.svg) ![publish](https://github.com/cty123/TrojanRust/actions/workflows/publish.yml/badge.svg) ![Version](https://img.shields.io/badge/Version_0.1.0-blue.svg) ![Stage](https://img.shields.io/badge/beta-blue.svg)
+![Build](https://github.com/cty123/TrojanRust/actions/workflows/build.yml/badge.svg) ![publish](https://github.com/cty123/TrojanRust/actions/workflows/publish.yml/badge.svg) ![Version](https://img.shields.io/github/v/release/cty123/TrojanRust) ![Stage](https://img.shields.io/badge/beta-blue.svg)
 
 Trojan-rust 是一个[Trojan协议](https://trojan-gfw.github.io/trojan/protocol.html)的Rust实现之一用于绕过[GFW](https://en.wikipedia.org/wiki/Great_Firewall)实现翻墙。这个项目专注于提升性能以及稳定性高于一的同时会尽量保证简洁易用。
 
