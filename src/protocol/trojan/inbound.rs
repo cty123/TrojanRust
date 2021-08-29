@@ -60,13 +60,15 @@ where
     IO: AsyncRead + AsyncWrite + Unpin + Send + Sync,
 {
     async fn handshake(&mut self) -> Result<InboundRequest> {
+        // Read request from inbound stream
         let request = parse(&mut self.stream).await?;
+
         info!("Received Trojan request {}", request.dump_request());
 
         if !request.validate(&self.secret) {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
-                "Received invalid hex value, dropping connection",
+                "Received invalid hex value",
             ));
         }
 

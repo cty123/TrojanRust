@@ -2,7 +2,6 @@ use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite, BufReader, ReadBuf};
 
 use crate::protocol::common::stream::OutboundStream;
@@ -14,7 +13,6 @@ where
     stream: BufReader<IO>,
 }
 
-#[async_trait]
 impl<IO> OutboundStream for DirectOutboundStream<IO> where
     IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static
 {
@@ -26,7 +24,7 @@ where
 {
     pub fn new(stream: IO) -> Box<dyn OutboundStream> {
         return Box::new(DirectOutboundStream {
-            stream: BufReader::with_capacity(256, stream),
+            stream: BufReader::with_capacity(512, stream),
         });
     }
 }

@@ -97,6 +97,8 @@ where
     }
 }
 
+/// Simple implementation for SOCKS5 protocol. Only implemented minimum amount of functionality
+/// to get TCP working on Firefox browsers.
 impl<IO> Socks5InboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
