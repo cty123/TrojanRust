@@ -14,10 +14,12 @@ Trojan-rust 是一个[Trojan协议](https://trojan-gfw.github.io/trojan/protocol
 
 * 易用性。另外一个项目初衷就是高易用性，项目最小化配置文件的代码量来做到对新人友好，又因为项目本身会比较简洁，所以这点应该不难做到。
 
-# 编译此项目（之后release编译好的程序）
+# 编译此项目
 
-目前项目还在非常早期阶段，所以暂时不提供编译好的binary程序，之后等到CI完全配置好之后会有的。另外由于Rust的缘故，编译的过程其实非常的傻瓜，所以一直会建议下载源代码自行编译。在编译之前你只需要安装Rust的SDK，https://www.rust-lang.org/。安装好之后去到命令行，
-
+目前项目还在非常早期阶段，所以，之后等到CI完全配置好之后会有的。另外由于Rust的缘故，编译的过程其实非常的傻瓜，所以一直会建议下载源代码自行编译。只需要安装Rust的SDK，https://www.rust-lang.org/,
+    
+    git clone https://github.com/cty123/TrojanRust.git
+    cd ./TrojanRust
     cargo build --release
 
 然后cargo就会自动编译所有不需要其他任何操作，编译好的文件会在 ./target/release/trojan-rust 目录下。
@@ -39,28 +41,50 @@ Trojan-rust 是一个[Trojan协议](https://trojan-gfw.github.io/trojan/protocol
 
 ## Create Certificate
 
-要用开启TLS的话需要先生成证书，可以用以下命令来生成，
+要用开启TLS的话需要先生成自签证书，或者用现有注册过的，可以用以下命令来生成，
 
     openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
 
-## Sample config file
+### Trojan 服务端配置样板
 ```json
 {
     "inbound": {
-        "protocol": "SOCKS" || "TROJAN",
+        "protocol": "TROJAN",
         "address": "0.0.0.0",
+        "secret": "123123",
         "port": 8081,
-        "tls": true,
-        "cert_path": "/path/to/file/cert.pem",
-        "key_path": "/path/to/file/key.pem"
+        "tls": {
+            "cert_path": "./cert.pem",
+            "key_path": "./key.pem"
+        }
     },
     "outbound": {
         "protocol": "DIRECT"
     }
 }
 ```
+### Trojan 客户端配置样板
+```json
+{
+    "inbound": {
+        "protocol": "SOCKS",
+        "address": "0.0.0.0",
+        "port": 8081
+    },
+    "outbound": {
+        "protocol": "TROJAN",
+        "address": "0.0.0.0",
+        "port": 8082,
+        "secret": "123123",
+        "tls": {
+            "host_name": "example.com",
+            "allow_insecure": true
+        }
+    }
+}
+```
 
-## Run the program
+## 运行程序
 
 ```
 trojan-rust -h
@@ -92,13 +116,11 @@ Run trojan-rust with specified config file
 
 - [x] 支持服务端Trojan协议，目前只支持TCP，UDP over TCP已经有实现，但是性能堪忧，所以暂时不放出（其实源码里面有，但是全部注释掉了），在优化之中。
 
-- [ ] 支持客户端Trojan协议，这样该项目就是端到端可用了，既可以当服务端也可以当客户端。- Work in progress. ETA Aug.15
+- [x] 支持客户端Trojan协议，这样该项目就是端到端可用了，既可以当服务端也可以当客户端。
 
-- [ ] Implement UDP over TCP for Trojan protocol on both client side and server side(待定，UDP这块性能上要仔细推敲，实现容易，但是要做的好难)
-
-- [ ] Performance profiling and bottleneck resolving. Will also include benchmarks versus other implementations.
+- [ ] 性能调优
 
 ## Official release 1.0.0 and above
-- [ ] Build the package into kernel module release(待定，理论上Rust可以做成linux kernel module，程序完全在内核态运行，理论上能更快，但是我没做过，得找人问问)
+- [ ] Build the package into kernel module release
 
 - [ ] Support other protocols, gRPC, websocket etc.
