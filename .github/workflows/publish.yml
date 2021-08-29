@@ -66,10 +66,10 @@ jobs:
           name: trojan-rust-linux
           path: ~/linux/
           
-      - name: Download Ubuntu Artifact
+      - name: Download MacOS Artifact
         uses: actions/download-artifact@v2
         with:
-          name: trojan-rust-linux
+          name: trojan-rust-macos
           path: ~/macos/
       
       - name: Rename
