@@ -36,6 +36,7 @@ pub struct PacketTrojanOutboundStream {
     // Internal states
     buffer: BytesMut,
     state: State,
+    payload_ctr: usize,
 
     // UDP request packet info
     atype: Atype,
@@ -90,28 +91,31 @@ impl AsyncWrite for PacketTrojanOutboundStream {
         while pos < buf.len() {
             match &self.state {
                 State::Atype => {
-                    self.atype = match Atype::from(buf[pos]) {
-                        Ok(atype) => atype,
-                        Err(e) => return Poll::Ready(Err(e)),
-                    };
-                    self.state = State::AddrSize;
-                    pos += 1;
+                    pos = self.consume_payload(pos, BYTES_ATYPE, buf);
+                    if self.buffer.len() >= BYTES_ATYPE {
+                        self.atype = match Atype::from(self.buffer.get_u8()) {
+                            Ok(atype) => atype,
+                            Err(e) => return Poll::Ready(Err(e)),
+                        };
+                        self.buffer.clear();
+                        self.state = State::AddrSize;
+                    }
                 }
                 State::AddrSize => {
                     self.addr_size = match self.atype {
                         Atype::IPv4 => IPV4_SIZE,
                         Atype::IPv6 => IPV6_SIZE,
                         Atype::DomainName => {
+                            let size = usize::from(buf[pos]);
                             pos += 1;
-                            usize::from(buf[pos])
+                            size
                         }
                     };
                     self.state = State::Addr;
                 }
                 State::Addr => {
                     let addr_size = self.addr_size;
-                    pos = self.read_field(pos, addr_size, buf);
-
+                    pos = self.consume_payload(pos, addr_size, buf);
                     if self.buffer.len() >= self.addr_size {
                         self.addr = match self.atype {
                             Atype::IPv4 => IpAddress::from_u32(self.buffer.get_u32()),
@@ -123,8 +127,7 @@ impl AsyncWrite for PacketTrojanOutboundStream {
                     }
                 }
                 State::Port => {
-                    pos = self.read_field(pos, BYTES_PORT, buf);
-
+                    pos = self.consume_payload(pos, BYTES_PORT, buf);
                     if self.buffer.len() >= BYTES_PORT {
                         self.port = self.buffer.get_u16();
                         self.buffer.clear();
@@ -132,8 +135,7 @@ impl AsyncWrite for PacketTrojanOutboundStream {
                     }
                 }
                 State::PayloadSize => {
-                    pos = self.read_field(pos, BYTES_PAYLOAD_SIZE, buf);
-
+                    pos = self.consume_payload(pos, BYTES_PAYLOAD_SIZE, buf);
                     if self.buffer.len() >= BYTES_PAYLOAD_SIZE {
                         self.payload_size = self.buffer.get_u16() as usize;
                         self.buffer.clear();
@@ -141,42 +143,43 @@ impl AsyncWrite for PacketTrojanOutboundStream {
                     }
                 }
                 State::CRLF => {
-                    pos = self.read_field(pos, BYTES_CRLF, buf);
-
+                    pos = self.consume_payload(pos, BYTES_CRLF, buf);
                     if self.buffer.len() >= BYTES_CRLF {
                         self.buffer.clear();
                         self.state = State::Payload;
                     }
                 }
                 State::Payload => {
-                    let size = self.payload_size;
-                    pos = self.read_field(pos, size, buf);
-
-                    // When we already have all the bytes
-                    if self.buffer.len() >= size {
-                        let destination =
-                            match format!("{}:{}", self.addr.to_string(), self.port).parse() {
-                                Ok(dest) => dest,
-                                Err(e) => {
-                                    return Poll::Ready(Err(Error::new(ErrorKind::InvalidData, e)))
-                                }
-                            };
-
-                        match self
-                            .udp_socket
-                            .poll_send_to(cx, self.buffer.borrow(), destination)
-                        {
-                            Poll::Ready(res) => match res {
-                                Ok(_) => (),
-                                Err(e) => {
-                                    warn!("Failed to write to remote: {}", e);
-                                    return Poll::Ready(Err(e));
-                                }
-                            },
-                            Poll::Pending => return Poll::Pending,
-                        }
+                    // If all payloads have been written we can reset the state machine to handle the next packet
+                    if self.payload_ctr >= self.payload_size {
+                        self.payload_ctr = 0;
                         self.buffer.clear();
                         self.state = State::Atype;
+                        continue;
+                    }
+
+                    // Otherwise, if we still have payloads to write we need to get the destination first
+                    let destination = match format!("{}:{}", self.addr.to_string(), self.port)
+                        .parse()
+                    {
+                        Ok(dest) => dest,
+                        Err(e) => return Poll::Ready(Err(Error::new(ErrorKind::InvalidData, e))),
+                    };
+
+                    // Actually write bytes through UDP, and increment counters
+                    // TODO: Use poll_send here so that we don't need to parse destination repeatedly
+                    match self.udp_socket.poll_send_to(cx, &buf[pos..], destination) {
+                        Poll::Ready(res) => match res {
+                            Ok(n) => {
+                                pos += n;
+                                self.payload_ctr += n;
+                            }
+                            Err(e) => {
+                                warn!("Failed to write to remote: {}", e);
+                                return Poll::Ready(Err(e));
+                            }
+                        },
+                        Poll::Pending => return Poll::Pending,
                     }
                 }
             }
@@ -197,10 +200,12 @@ impl AsyncWrite for PacketTrojanOutboundStream {
 impl PacketTrojanOutboundStream {
     pub async fn new() -> Result<Box<dyn OutboundStream>> {
         let stream = PacketTrojanOutboundStream {
+            // TODO: Avoid using unwrap here
             udp_socket: UdpSocket::bind("0.0.0.0:0").await.unwrap(),
 
             buffer: BytesMut::with_capacity(1024),
             state: State::Atype,
+            payload_ctr: 0,
 
             atype: Atype::IPv4,
             addr: IpAddress::from_u32(0),
@@ -211,9 +216,30 @@ impl PacketTrojanOutboundStream {
         Ok(Box::new(stream))
     }
 
-    fn read_field(&mut self, pos: usize, size: usize, buf: &[u8]) -> usize {
-        let cap = min(size - self.buffer.len(), buf.len() - pos);
-        self.buffer.put_slice(&buf[pos..pos + cap]);
+    /// Helper function to consume the payload passed by poll_write function call. The function takes
+    /// the currently consuming position of the payload, total amount of bytes the buffer should store
+    /// before returning and the payload.
+    #[inline]
+    fn consume_payload(&mut self, pos: usize, size: usize, payload: &[u8]) -> usize {
+        // Read at most cap bytes, because in each state the state machine needs to decide
+        // how many more bytes it needs to read next based on what is in the buffer. So here
+        // we read at most cap bytes and give it back to the caller to decide how many more
+        // to read.
+        let cap = min(size - self.buffer.len(), payload.len() - pos);
+
+        // Copy the payload to buffer for the caller. This is not the most efficient way of writing
+        // but generally speaking the Trojan header size are small compared to the payload, and we
+        // only copy for headers.
+        self.buffer.put_slice(&payload[pos..pos + cap]);
+
+        // March pos to the next position of the payload. The caller is supposed to update its own
+        // counter of the current position in the payload based on the return value here.
         pos + cap
+    }
+
+    /// Read n bytes from the UDP stream into the buffer by keeping polling for read.
+    fn read_bytes(&mut self, buffer: &mut BytesMut, n: usize) {
+        let len = 0usize;
+        while len < n {}
     }
 }

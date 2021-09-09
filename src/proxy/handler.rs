@@ -1,6 +1,6 @@
+use std::convert::TryInto;
 use std::io::{Error, ErrorKind, Result};
 use std::sync::Arc;
-use std::convert::TryInto;
 
 use log::info;
 use rustls::ClientConfig;
@@ -16,6 +16,7 @@ use crate::protocol::common::stream::{InboundStream, OutboundStream};
 use crate::protocol::direct::outbound::DirectOutboundStream;
 use crate::protocol::trojan::outbound::TrojanOutboundStream;
 use crate::protocol::trojan::packet::PacketTrojanOutboundStream;
+use crate::protocol::trojan::base::HEX_SIZE;
 use crate::proxy::base::SupportedProtocols;
 
 /// Handler is responsible for taking user's request and process them and send back the result.
@@ -72,6 +73,7 @@ impl Handler {
                     .as_bytes()
                     .to_vec()
             }
+            // Configure secret if need to add other protocols
             _ => Vec::new(),
         };
 
@@ -109,10 +111,52 @@ impl Handler {
         };
     }
 
-    #[inline]
+    /// Given an inbound request, handle the request by establishing a new TCP/UDP/TLS connection based on inbound
+    /// handler configuration. If the connection is TCP, will also check if should escalate the connection to TLS.
     async fn handle(&self, request: &InboundRequest) -> Result<Box<dyn OutboundStream>> {
         return match request.transport_protocol {
-            TransportProtocol::TCP => self.tcp_dial_destination(request).await,
+            TransportProtocol::TCP => {
+                let (addr, port) = request.addr_port();
+
+                // Establish raw TCP connection with remote
+                let connection = match TcpStream::connect((addr.as_ref(), port)).await {
+                    Ok(connection) => {
+                        info!("Established connection to remote host at {}:{}", addr, port);
+                        connection
+                    }
+                    Err(e) => {
+                        return Err(Error::new(
+                            ErrorKind::ConnectionReset,
+                            format!("Failed to connect to {}:{}, {}", addr, port, e),
+                        ));
+                    }
+                };
+
+                // Escalate raw TCP connection to TLS
+                return match (self.tls_config.as_ref(), self.host_name.as_ref()) {
+                    (Some(tls), Some(hname)) => {
+                        let connector = TlsConnector::from(Arc::clone(tls));
+                        let domain = match DNSNameRef::try_from_ascii_str(hname) {
+                            Ok(domain) => domain,
+                            Err(_) => {
+                                return Err(Error::new(
+                                    ErrorKind::InvalidInput,
+                                    "Failed to parse host name",
+                                ))
+                            }
+                        };
+                        let tls_stream = connector.connect(domain, connection).await?;
+                        self.handle_protocol(tls_stream, request).await
+                    },
+                    (Some(_), _) => {
+                        return Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            "Failed to find destination address, destination port or host name from configuration",
+                        ))
+                    },
+                    (None, _) => self.handle_protocol(connection, request).await
+                };
+            }
             TransportProtocol::UDP => {
                 let (addr, port) = request.addr_port();
                 info!("Handle UDP associate to {}:{}", addr, port);
@@ -124,53 +168,6 @@ impl Handler {
                     )),
                 }
             }
-        };
-    }
-
-    async fn tcp_dial_destination(
-        &self,
-        request: &InboundRequest,
-    ) -> Result<Box<dyn OutboundStream>> {
-        let (addr, port) = match &self.addr_port {
-            Some((a, p)) => (a.clone(), p.clone()),
-            None => request.addr_port()
-        };
-
-        let connection = match TcpStream::connect((addr.as_ref(), port)).await {
-            Ok(connection) => {
-                info!("Established connection to remote host at {}:{}", addr, port);
-                connection
-            }
-            Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionReset,
-                    format!("Failed to connect to {}:{}, {}", addr, port, e),
-                ));
-            }
-        };
-
-        return match (self.tls_config.as_ref(), self.host_name.as_ref()) {
-            (Some(tls), Some(hname)) => {
-                let connector = TlsConnector::from(Arc::clone(tls));
-                let domain = match DNSNameRef::try_from_ascii_str(hname) {
-                    Ok(domain) => domain,
-                    Err(_) => {
-                        return Err(Error::new(
-                            ErrorKind::InvalidInput,
-                            "Failed to parse host name",
-                        ))
-                    }
-                };
-                let tls_stream = connector.connect(domain, connection).await?;
-                self.handle_protocol(tls_stream, request).await
-            },
-            (Some(_), _) => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    "Failed to find destination address, destination port or host name from configuration",
-                ))
-            },
-            (None, _) => self.handle_protocol(connection, request).await
         };
     }
 
@@ -186,13 +183,17 @@ impl Handler {
         return match self.protocol {
             SupportedProtocols::DIRECT => Ok(DirectOutboundStream::new(stream)),
             SupportedProtocols::TROJAN => {
-                if self.secret.len() != 56 {
+                if self.secret.len() != HEX_SIZE {
                     return Err(Error::new(
                         ErrorKind::InvalidInput,
-                        "Hex in trojan protocol is not 56 bytes",
+                        format!("Hex in trojan protocol is not {} bytes", HEX_SIZE),
                     ));
                 }
-                Ok(TrojanOutboundStream::new(stream, request, self.secret.as_slice().try_into().unwrap()))
+                Ok(TrojanOutboundStream::new(
+                    stream,
+                    request,
+                    self.secret.as_slice().try_into().unwrap(),
+                ))
             }
             SupportedProtocols::SOCKS => {
                 Err(Error::new(ErrorKind::Unsupported, "Unsupported protocol"))

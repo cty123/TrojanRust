@@ -5,10 +5,11 @@ use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 
-const CRLF: u16 = 0x0D0A;
+pub const HEX_SIZE: usize = 56;
+pub const CRLF: u16 = 0x0D0A;
 
 pub struct Request {
-    hex: [u8; 56],
+    hex: [u8; HEX_SIZE],
     command: Command,
     atype: Atype,
     addr: IpAddress,
@@ -17,7 +18,7 @@ pub struct Request {
 
 impl Request {
     pub fn new(
-        hex: [u8; 56],
+        hex: [u8; HEX_SIZE],
         command: Command,
         atype: Atype,
         addr: IpAddress,

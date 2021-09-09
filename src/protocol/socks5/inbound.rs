@@ -107,12 +107,10 @@ where
         let mut buf = [0; 32];
 
         // Receive the client hello message
-        let n = match self.stream.read(&mut buf).await {
+        let _ = match self.stream.read(&mut buf).await {
             Ok(n) => n,
             Err(e) => return Err(e),
         };
-
-        debug!("Read {} bytes of data: {:?}", n, &buf[0..n]);
 
         // TODO: Validate client hello message
         // Reply with server hello message
@@ -120,8 +118,6 @@ where
         if let Err(e) = self.stream.write_all(&server_hello.to_bytes()).await {
             return Err(e);
         }
-
-        debug!("Wrote {} bytes of data: {:?}", 2, server_hello.to_bytes());
 
         Ok(())
     }

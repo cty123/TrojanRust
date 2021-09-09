@@ -1,19 +1,18 @@
 use std::io::Result;
 
-use log::debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::protocol::common::addr::{IpAddress, IPV4_SIZE, IPV6_SIZE};
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
-use crate::protocol::trojan::base::Request;
+use crate::protocol::trojan::base::{Request, HEX_SIZE};
 
 pub async fn parse<IO>(mut stream: IO) -> Result<Request>
 where
     IO: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     // Read hex value for authentication
-    let mut hex = [0; 56];
+    let mut hex = [0u8; HEX_SIZE];
     stream.read_exact(&mut hex).await?;
 
     // Read CLRF
@@ -49,9 +48,5 @@ where
     // Read CLRF
     stream.read_u16().await?;
 
-    let request = Request::new(hex, command, atype, addr, port);
-
-    debug!("Read request {}", request.request_addr_port());
-
-    Ok(request)
+    Ok(Request::new(hex, command, atype, addr, port))
 }
