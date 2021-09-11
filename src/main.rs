@@ -1,19 +1,17 @@
-use log::{error, info};
-
 use std::io::{Error, ErrorKind, Result};
 
 use clap::{App, Arg};
+use log::{error, info};
 
-mod config;
-mod protocol;
-mod proxy;
+use trojan_rust::config::parser::reader_config;
+use trojan_rust::proxy::tcp_server::TcpServer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
     let matches = App::new("Trojan Rust")
-        .version("0.3.2")
+        .version("0.3.4")
         .author("cty123")
         .about("Trojan Rust is a rust implementation of the trojan protocol to circumvent GFW")
         .arg(
@@ -30,7 +28,7 @@ async fn main() -> Result<()> {
 
     info!("Parsing trojan-rust configuration from {}", config_path);
 
-    let config = match config::parser::reader_config(config_path) {
+    let config = match reader_config(config_path) {
         Ok(config) => config,
         Err(e) => {
             error!("Failed to load config file, {}", e);
@@ -38,7 +36,7 @@ async fn main() -> Result<()> {
         }
     };
 
-    let server = match proxy::tcp_server::TcpServer::new(config.inbound, config.outbound) {
+    let server = match TcpServer::new(config.inbound, config.outbound) {
         Ok(server) => server,
         Err(e) => {
             error!("Failed to instantiate the server, {}", e);

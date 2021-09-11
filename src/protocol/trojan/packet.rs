@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::cmp::min;
 use std::io::{Error, ErrorKind, Result};
 use std::pin::Pin;
@@ -152,9 +151,7 @@ impl AsyncWrite for PacketTrojanOutboundStream {
                 State::Payload => {
                     // If all payloads have been written we can reset the state machine to handle the next packet
                     if self.payload_ctr >= self.payload_size {
-                        self.payload_ctr = 0;
-                        self.buffer.clear();
-                        self.state = State::Atype;
+                        self.reset();
                         continue;
                     }
 
@@ -200,8 +197,7 @@ impl AsyncWrite for PacketTrojanOutboundStream {
 impl PacketTrojanOutboundStream {
     pub async fn new() -> Result<Box<dyn OutboundStream>> {
         let stream = PacketTrojanOutboundStream {
-            // TODO: Avoid using unwrap here
-            udp_socket: UdpSocket::bind("0.0.0.0:0").await.unwrap(),
+            udp_socket: UdpSocket::bind("0.0.0.0:0").await?,
 
             buffer: BytesMut::with_capacity(1024),
             state: State::Atype,
@@ -237,9 +233,10 @@ impl PacketTrojanOutboundStream {
         pos + cap
     }
 
-    /// Read n bytes from the UDP stream into the buffer by keeping polling for read.
-    fn read_bytes(&mut self, buffer: &mut BytesMut, n: usize) {
-        let len = 0usize;
-        while len < n {}
+    /// Helper function to reset the internal state of the stream to be able to accept the next packet.
+    fn reset(&mut self) {
+        self.payload_ctr = 0;
+        self.buffer.clear();
+        self.state = State::Atype;
     }
 }

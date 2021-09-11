@@ -1,6 +1,6 @@
 [package]
 name = "trojan-rust"
-version = "0.3.2"
+version = "0.3.4"
 authors = ["ctydw"]
 edition = "2018"
 
@@ -25,3 +25,12 @@ tokio-stream = { version = "0.1.7" }
 tokio-rustls = "0.22.0"
 uninit = "0.4.0"
 webpki-roots = "0.21.0"
+mockall = "0.10.2"
+
+[lib]
+name = "trojan_rust"
+path = "src/lib.rs"
+
+[[bin]]
+name = "trojan_rust"
+path = "src/main.rs"

@@ -30,8 +30,7 @@ impl Acceptor {
         let secret = match inbound.protocol {
             SupportedProtocols::TROJAN if inbound.secret.is_some() => {
                 let secret = inbound.secret.as_ref().unwrap();
-                let hashvalue = Sha224::digest(secret.as_bytes());
-                hashvalue
+                Sha224::digest(secret.as_bytes())
                     .iter()
                     .map(|x| format!("{:02x}", x))
                     .collect::<String>()
