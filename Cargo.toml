@@ -32,5 +32,5 @@ name = "trojan_rust"
 path = "src/lib.rs"
 
 [[bin]]
-name = "trojan_rust"
+name = "trojan-rust"
 path = "src/main.rs"
