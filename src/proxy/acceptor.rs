@@ -82,14 +82,11 @@ impl Acceptor {
                     .unwrap()
                     .accept(inbound_stream)
                     .await?;
-                Ok(TrojanInboundStream::new(
-                    tls_stream,
-                    Arc::clone(&self.secret),
-                ))
+                Ok(TrojanInboundStream::new(tls_stream, self.secret.clone()))
             }
             SupportedProtocols::TROJAN => Ok(TrojanInboundStream::new(
                 inbound_stream,
-                Arc::clone(&self.secret),
+                self.secret.clone(),
             )),
             // Shutdown the connection if the protocol is currently unsupported
             _ => Err(Error::new(

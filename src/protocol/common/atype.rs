@@ -1,3 +1,4 @@
+use std::fmt::{self};
 use std::io::{Error, ErrorKind, Result};
 
 const ATYPE_IPV4: u8 = 1;
@@ -31,6 +32,16 @@ impl Atype {
             Atype::IPv4 => ATYPE_IPV4,
             Atype::IPv6 => ATYPE_IPV6,
             Atype::DomainName => ATYPE_DOMAIN_NAME,
+        }
+    }
+}
+
+impl fmt::Display for Atype {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Atype::IPv4 => write!(fmt, "IPv4"),
+            Atype::IPv6 => write!(fmt, "IPv6"),
+            Atype::DomainName => write!(fmt, "DomainName"),
         }
     }
 }
