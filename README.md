@@ -126,9 +126,13 @@ Run trojan-rust with specified config file
     - [x] Implement client side Trojan protocol with TLS
     - [ ] -[Delayed After Beta] Implement client side Trojan protocol with UDP over TCP.
 
-- [ ] Performance profiling and bottleneck resolving. Will also include benchmarks versus other implementations.
+- [x] Performance profiling and bottleneck resolving. Will also include benchmarks versus other implementations. (Benchmark report coming up soon)
 
-## Official release 1.0.0 and above(For general users)
+## Official release 0.4.0 and above(For general users)
+- [ ] Improve client mode performance.
+
+- [ ] Implement gRPC for transporting data
+ 
 - [ ] +[Delayed After Beta] Implement client side Trojan protocol with UDP over TCP.   
 
 - [ ] Build the package into kernel module release

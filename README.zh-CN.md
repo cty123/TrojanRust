@@ -111,16 +111,18 @@ Run trojan-rust with specified config file
 
 # 项目规划 
 
-## Beta stage 0.0.1 - 1.0.0
+## Beta stage 0.0.1 - 0.4.0
 - [x] 搭建项目框架，先有个能用socks5服务端。
 
 - [x] 支持服务端Trojan协议，目前只支持TCP，UDP over TCP已经有实现，但是性能堪忧，所以暂时不放出（其实源码里面有，但是全部注释掉了），在优化之中。
 
 - [x] 支持客户端Trojan协议，这样该项目就是端到端可用了，既可以当服务端也可以当客户端。
 
-- [ ] 性能调优
+- [x] 性能调优，已经测试完，之后会放出详细的性能测试报告
 
-## Official release 1.0.0 and above
+## Official release 0.4.0 以上
+- [ ] 改善Trojan客户端的性能（根据性能测试得知，此项目的Trojan客户端是最关键的性能拖油瓶）
+
+- [ ] 实现gRPC来传输数据，降低延迟，提升用户体验
+
 - [ ] Build the package into kernel module release
-
-- [ ] Support other protocols, gRPC, websocket etc.
