@@ -122,71 +122,54 @@ fn load_certs(path: &str) -> std::io::Result<Vec<Certificate>> {
 }
 
 fn load_private_key(path: &str) -> std::io::Result<PrivateKey> {
-    let mut reader = match File::open(path) {
-        Ok(file) => BufReader::new(file),
+    let pkcs8_key = match File::open(path) {
+        Ok(file) => load_pkcs8_private_key(&mut BufReader::new(file)),
         Err(e) => {
-            error!("Failed to load tls certificate file, {}", e);
+            error!("Failed to load tls private key file, {}", e);
             return Err(e);
         }
     };
 
-    // Try to load pkcs8 private key in key file 
-    match load_pkcs8_private_key(&mut reader, path) {
-        Ok(key) => return Ok(key),
-        Err(_) => (),
+    let rsa_key = match File::open(path) {
+        Ok(file) => load_rsa_private_key(&mut BufReader::new(file)),
+        Err(e) => {
+            error!("Failed to load tls private key file, {}", e);
+            return Err(e);
+        }
     };
 
-    // Try to load rsa private key in key file
-    match load_rsa_private_key(&mut reader, path) {
-        Ok(key) => return Ok(key),
-        Err(_) => (),
+    return match (pkcs8_key, rsa_key) {
+        (Ok(pkcs8), Ok(_)) => Ok(pkcs8),
+        (Err(_), Ok(rsa)) => Ok(rsa),
+        _ => Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Failed to find any private key in file",
+        )),
     };
-
-    Err(Error::new(ErrorKind::InvalidInput, "Failed to find any private key in file"))
 }
 
-fn load_pkcs8_private_key(
-    reader: &mut BufReader<std::fs::File>,
-    path: &str,
-) -> std::io::Result<PrivateKey> {
+fn load_pkcs8_private_key(reader: &mut BufReader<std::fs::File>) -> std::io::Result<PrivateKey> {
     return match pemfile::pkcs8_private_keys(reader) {
         Ok(keys) if keys.len() == 1 => Ok(keys.first().unwrap().clone()),
-        Ok(keys) if keys.len() < 1 => {
-            error!("No private key found in file {}", path);
-            Err(Error::new(ErrorKind::InvalidData, "no private key found"))
-        }
-        Ok(keys) => {
-            warn!(
-                "Multiple private keys found in file {}, will take the first one",
-                path
-            );
+        Ok(keys) if keys.len() >= 1 => {
+            warn!("Multiple pkcs8 private keys found, will take the first one");
             Ok(keys.first().unwrap().clone())
         }
-        Err(_) => Err(Error::new(
+        _ => Err(Error::new(
             ErrorKind::InvalidData,
             "failed to load PKCS8 private key",
         )),
     };
 }
 
-fn load_rsa_private_key(
-    reader: &mut BufReader<std::fs::File>,
-    path: &str,
-) -> std::io::Result<PrivateKey> {
+fn load_rsa_private_key(reader: &mut BufReader<std::fs::File>) -> std::io::Result<PrivateKey> {
     return match pemfile::rsa_private_keys(reader) {
         Ok(keys) if keys.len() == 1 => Ok(keys.first().unwrap().clone()),
-        Ok(keys) if keys.len() < 1 => {
-            error!("No private key found in file {}", path);
-            Err(Error::new(ErrorKind::InvalidData, "no private key found"))
-        }
-        Ok(keys) => {
-            warn!(
-                "Multiple private keys found in file {}, will take the first one",
-                path
-            );
+        Ok(keys) if keys.len() >= 1 => {
+            warn!("Multiple RSA private keys found, will take the first one");
             Ok(keys.first().unwrap().clone())
         }
-        Err(_) => Err(Error::new(
+        _ => Err(Error::new(
             ErrorKind::InvalidData,
             "failed to load RSA private key",
         )),
