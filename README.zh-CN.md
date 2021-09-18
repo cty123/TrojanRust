@@ -16,7 +16,7 @@ Trojan-rust 是一个[Trojan协议](https://trojan-gfw.github.io/trojan/protocol
 
 # 编译此项目
 
-目前项目还在非常早期阶段，所以，之后等到CI完全配置好之后会有的。另外由于Rust的缘故，编译的过程其实非常的傻瓜，所以一直会建议下载源代码自行编译。只需要安装Rust的SDK，https://www.rust-lang.org/,
+目前项目还在非常早期阶段，目前的release里面只有Window, Macos， Linux的64位版本的build。其他平台之后等到CI完全配置好之后会有的。另外由于Rust的缘故，编译的过程其实非常的傻瓜，所以一直会建议下载源代码自行编译。只需要安装Rust的SDK，https://www.rust-lang.org/,
     
     git clone https://github.com/cty123/TrojanRust.git
     cd ./TrojanRust
