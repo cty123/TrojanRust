@@ -141,10 +141,13 @@ fn load_private_key(path: &str) -> std::io::Result<PrivateKey> {
     return match (pkcs8_key, rsa_key) {
         (Ok(pkcs8), Ok(_)) => Ok(pkcs8),
         (Err(_), Ok(rsa)) => Ok(rsa),
-        _ => Err(Error::new(
-            ErrorKind::InvalidInput,
-            "Failed to find any private key in file",
-        )),
+        _ => {
+            warn!("No TLS private keys found, will fallback to raw TCP");
+            Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Failed to find any private key in file",
+            ))
+        }
     };
 }
 
