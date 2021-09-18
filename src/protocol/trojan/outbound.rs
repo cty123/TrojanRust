@@ -1,17 +1,16 @@
 use std::io::Result;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use tokio::io::{AsyncRead, AsyncWrite, BufReader, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter, ReadBuf};
 
 use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::OutboundStream;
-use crate::protocol::trojan::base::Request;
+use crate::protocol::trojan::base::CRLF;
 
 pub struct TrojanOutboundStream<IO> {
-    stream: BufReader<IO>,
-    request: Request,
-    header_written: bool,
+    stream: BufWriter<IO>,
 }
 
 impl<IO> OutboundStream for TrojanOutboundStream<IO> where
@@ -43,21 +42,6 @@ where
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize>> {
-        if !self.header_written {
-            let mut pos = 0;
-            let header = self.request.to_bytes();
-            while pos < header.len() {
-                match Pin::new(&mut self.stream).poll_write(cx, &header) {
-                    Poll::Ready(res) => match res {
-                        Ok(n) => pos += n,
-                        Err(e) => return Poll::Ready(Err(e)),
-                    },
-                    Poll::Pending => return Poll::Pending,
-                }
-            }
-            self.header_written = true;
-        }
-
         return Pin::new(&mut self.stream).poll_write(cx, buf);
     }
 
@@ -76,15 +60,25 @@ impl<IO> TrojanOutboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    pub fn new(
+    pub async fn new(
         stream: IO,
         request: &InboundRequest,
-        secret: [u8; 56],
-    ) -> Box<dyn OutboundStream> {
-        Box::new(TrojanOutboundStream {
-            stream: BufReader::with_capacity(256, stream),
-            request: Request::from_request(request, secret),
-            header_written: false,
-        })
+        secret: &Vec<u8>,
+    ) -> Result<Box<dyn OutboundStream>> {
+        let mut stream = TrojanOutboundStream {
+            stream: BufWriter::with_capacity(256, stream),
+        };
+
+        // Write request header
+        stream.write_all(secret).await?;
+        stream.write_u16(CRLF).await?;
+        stream.write_u8(request.command.to_byte()).await?;
+        stream.write_u8(request.atype.to_byte()).await?;
+        stream.write_all(&request.addr.to_bytes_vec()).await?;
+        stream.write_u16(request.port).await?;
+        stream.write_u16(CRLF).await?;
+
+        // Return the outbound stream itself
+        Ok(Box::new(stream))
     }
 }

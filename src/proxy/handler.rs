@@ -14,9 +14,9 @@ use crate::config::tls::make_client_config;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::protocol::common::stream::{InboundStream, OutboundStream};
 use crate::protocol::direct::outbound::DirectOutboundStream;
+use crate::protocol::trojan::base::HEX_SIZE;
 use crate::protocol::trojan::outbound::TrojanOutboundStream;
 use crate::protocol::trojan::packet::PacketTrojanOutboundStream;
-use crate::protocol::trojan::base::HEX_SIZE;
 use crate::proxy::base::SupportedProtocols;
 
 /// Handler is responsible for taking user's request and process them and send back the result.
@@ -65,8 +65,7 @@ impl Handler {
         let secret = match outbound.protocol {
             SupportedProtocols::TROJAN if outbound.secret.is_some() => {
                 let secret = outbound.secret.as_ref().unwrap();
-                let hashvalue = Sha224::digest(secret.as_bytes());
-                hashvalue
+                Sha224::digest(secret.as_bytes())
                     .iter()
                     .map(|x| format!("{:02x}", x))
                     .collect::<String>()
@@ -116,10 +115,13 @@ impl Handler {
     async fn handle(&self, request: &InboundRequest) -> Result<Box<dyn OutboundStream>> {
         return match request.transport_protocol {
             TransportProtocol::TCP => {
-                let (addr, port) = request.addr_port();
+                let (addr, port) = match self.addr_port.clone() {
+                    Some(addr_port) => addr_port,
+                    None => request.addr_port(),
+                };
 
                 // Establish raw TCP connection with remote
-                let connection = match TcpStream::connect((addr.as_ref(), port)).await {
+                let connection = match TcpStream::connect((addr.to_string(), port)).await {
                     Ok(connection) => {
                         info!("Established connection to remote host at {}:{}", addr, port);
                         connection
@@ -148,7 +150,7 @@ impl Handler {
                         let tls_stream = connector.connect(domain, connection).await?;
                         self.handle_protocol(tls_stream, request).await
                     },
-                    (Some(_), _) => {
+                    (Some(_), None) => {
                         return Err(Error::new(
                             ErrorKind::InvalidInput,
                             "Failed to find destination address, destination port or host name from configuration",
@@ -189,11 +191,9 @@ impl Handler {
                         format!("Hex in trojan protocol is not {} bytes", HEX_SIZE),
                     ));
                 }
-                Ok(TrojanOutboundStream::new(
-                    stream,
-                    request,
-                    self.secret.as_slice().try_into().unwrap(),
-                ))
+                let outbound_stream =
+                    TrojanOutboundStream::new(stream, request, &self.secret).await?;
+                Ok(outbound_stream)
             }
             SupportedProtocols::SOCKS => {
                 Err(Error::new(ErrorKind::Unsupported, "Unsupported protocol"))

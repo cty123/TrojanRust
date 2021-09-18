@@ -33,18 +33,6 @@ impl Request {
         };
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = BytesMut::with_capacity(128);
-        buf.put_slice(&self.hex);
-        buf.put_u16(CRLF);
-        buf.put_u8(self.command.to_byte());
-        buf.put_u8(self.atype.to_byte());
-        buf.put_slice(&self.addr.to_bytes_vec());
-        buf.put_u16(self.port);
-        buf.put_u16(CRLF);
-        return buf.to_vec();
-    }
-
     #[inline]
     pub fn request_addr_port(&self) -> String {
         return format!("{}:{}", self.addr.to_string(), self.port);
