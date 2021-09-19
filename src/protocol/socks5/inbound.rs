@@ -5,30 +5,19 @@ use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
 
-use async_trait::async_trait;
-use log::{debug, error, info};
-
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::InboundStream;
-use crate::protocol::socks5::base::{Request, RequestAck, ServerHello};
+use crate::protocol::socks5::base::{ServerHello, VERSION};
 use crate::protocol::socks5::parser;
 
 pub struct Socks5InboundStream<IO> {
     stream: BufReader<IO>,
-    port: u16,
 }
 
-impl<IO> Socks5InboundStream<IO>
-where
-    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
+impl<IO> InboundStream for Socks5InboundStream<IO> where
+    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static
 {
-    pub fn new(stream: IO, port: u16) -> Box<dyn InboundStream> {
-        Box::new(Socks5InboundStream {
-            stream: BufReader::with_capacity(1024, stream),
-            port,
-        })
-    }
 }
 
 impl<IO> AsyncRead for Socks5InboundStream<IO>
@@ -69,81 +58,57 @@ where
     }
 }
 
-#[async_trait]
-impl<IO> InboundStream for Socks5InboundStream<IO>
-where
-    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
-{
-    async fn handshake(&mut self) -> Result<InboundRequest> {
-        // Read and reply for the initial client/server hello messages
-        if let Err(e) = self.init_ack().await {
-            return Err(e);
-        };
-
-        // Read request and parse it
-        let request = match self.read_request().await {
-            Ok(r) => r,
-            Err(e) => return Err(e),
-        };
-
-        info!("Received socks5 request: {}", request.dump_request());
-
-        // Reply ACK message for request message
-        if let Err(e) = self.write_request_ack().await {
-            return Err(e);
-        }
-
-        Ok(request.inbound_request())
-    }
-}
-
 /// Simple implementation for SOCKS5 protocol. Only implemented minimum amount of functionality
 /// to get TCP working on Firefox browsers.
 impl<IO> Socks5InboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    async fn init_ack(&mut self) -> Result<()> {
+    async fn init_ack(mut stream: IO) -> Result<()> {
         let mut buf = [0; 32];
 
         // Receive the client hello message
-        let _ = match self.stream.read(&mut buf).await {
+        let _ = match stream.read(&mut buf).await {
             Ok(n) => n,
             Err(e) => return Err(e),
         };
 
         // TODO: Validate client hello message
         // Reply with server hello message
-        let server_hello = ServerHello::new(5, 0);
-        if let Err(e) = self.stream.write_all(&server_hello.to_bytes()).await {
+        let server_hello = ServerHello::new(0);
+        if let Err(e) = stream.write_all(&server_hello.to_bytes()).await {
             return Err(e);
         }
 
         Ok(())
     }
 
-    async fn read_request(&mut self) -> Result<Request> {
-        let request = parser::parse(&mut self.stream).await?;
-        return Ok(request);
-    }
-
-    async fn write_request_ack(&mut self) -> Result<()> {
+    async fn write_request_ack(mut stream: IO, port: u16) -> Result<()> {
         // TODO: Have a better way to write back request ACK
-        let ack = RequestAck::new(
-            5,
-            0,
-            0,
-            1,
-            IpAddress::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
-            self.port,
-        );
-        if let Err(e) = self.stream.write_all(&ack.to_bytes()).await {
-            error!("Failed to write to socket, err = {:?}", e);
-            return Err(e);
-        }
-
-        debug!("Reply request ACK {:?}", ack.to_bytes());
+        stream.write_all(&[VERSION, 0, 0, 1]).await?;
+        stream
+            .write_all(&IpAddress::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))).to_bytes_vec())
+            .await?;
+        stream.write_u16(port).await?;
 
         Ok(())
+    }
+}
+
+impl<IO> Socks5InboundStream<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
+{
+    pub async fn new(stream: IO, port: u16) -> Result<(InboundRequest, Box<dyn InboundStream>)> {
+        let mut outbound_stream = Socks5InboundStream {
+            stream: BufReader::with_capacity(256, stream),
+        };
+
+        // Read and reply for the initial client/server hello messages
+        Socks5InboundStream::init_ack(&mut outbound_stream).await?;
+        let request = parser::parse(&mut outbound_stream).await?;
+        Socks5InboundStream::write_request_ack(&mut outbound_stream, port).await?;
+
+        Ok((request.inbound_request(), Box::new(outbound_stream)))
     }
 }

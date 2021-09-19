@@ -6,9 +6,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use crate::protocol::common::addr::{IpAddress, IPV4_SIZE, IPV6_SIZE};
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
-use crate::protocol::socks5::base::Request;
-
-const VERSION: u8 = 5;
+use crate::protocol::socks5::base::{Request, VERSION};
 
 pub async fn parse<IO>(mut stream: IO) -> Result<Request>
 where

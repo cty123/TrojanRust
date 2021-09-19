@@ -5,6 +5,8 @@ use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 
+pub const VERSION: u8 = 5;
+
 pub struct Request {
     version: u8,
     command: Command,
@@ -36,8 +38,11 @@ pub struct RequestAck {
 }
 
 impl ServerHello {
-    pub fn new(version: u8, method: u8) -> ServerHello {
-        return ServerHello { version, method };
+    pub fn new(method: u8) -> ServerHello {
+        return ServerHello {
+            version: VERSION,
+            method,
+        };
     }
 
     pub fn to_bytes(&self) -> [u8; 2] {
@@ -46,9 +51,9 @@ impl ServerHello {
 }
 
 impl RequestAck {
-    pub fn new(version: u8, rep: u8, rsv: u8, atype: u8, addr: IpAddress, port: u16) -> RequestAck {
+    pub fn new(rep: u8, rsv: u8, atype: u8, addr: IpAddress, port: u16) -> RequestAck {
         return RequestAck {
-            version,
+            version: VERSION,
             rep,
             rsv,
             atype,

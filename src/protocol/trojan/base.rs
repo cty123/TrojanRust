@@ -1,5 +1,3 @@
-use bytes::{BufMut, BytesMut};
-
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;

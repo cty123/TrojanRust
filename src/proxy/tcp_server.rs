@@ -9,7 +9,8 @@ use crate::proxy::acceptor::Acceptor;
 use crate::proxy::handler::Handler;
 
 pub struct TcpServer {
-    local_addr_port: (String, u16),
+    local_addr: String,
+    local_port: u16,
     acceptor: Arc<Acceptor>,
     handler: Arc<Handler>,
 }
@@ -23,16 +24,17 @@ impl TcpServer {
         let acceptor = Arc::from(Acceptor::new(&inbound_config));
 
         return Ok(TcpServer {
-            local_addr_port: (inbound_config.address, inbound_config.port),
+            local_addr: inbound_config.address,
+            local_port: inbound_config.port,
             handler,
             acceptor,
         });
     }
 
     pub async fn start(self) -> Result<()> {
-        let (local_addr, local_port) = self.local_addr_port;
+        let (local_addr, local_port) = (self.local_addr, self.local_port);
 
-        let listener = TcpListener::bind(format!("{}:{}", local_addr, local_port)).await?;
+        let listener = TcpListener::bind((local_addr.as_ref(), local_port)).await?;
 
         info!(
             "TCP server started on {}:{}, ready to accept input stream",
@@ -44,11 +46,11 @@ impl TcpServer {
 
             info!("Received new connection from {}", addr);
 
-            let acceptor_clone = Arc::clone(&self.acceptor);
+            let acceptor = Arc::clone(&self.acceptor);
             let handler = Arc::clone(&self.handler);
 
             tokio::spawn(async move {
-                let mut inbound_stream = match acceptor_clone.accept(socket).await {
+                let (request, inbound_stream) = match acceptor.accept(socket).await {
                     Ok(stream) => stream,
                     Err(e) => {
                         warn!("Failed to accept inbound connection from {}: {}", addr, e);
@@ -56,7 +58,7 @@ impl TcpServer {
                     }
                 };
 
-                match handler.dispatch(&mut inbound_stream).await {
+                match handler.dispatch(inbound_stream, request).await {
                     Ok(_) => {
                         info!("Connection from {} has finished", addr);
                     }

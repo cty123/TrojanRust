@@ -1,7 +1,7 @@
 [package]
 name = "trojan-rust"
-version = "0.3.4"
-authors = ["ctydw"]
+version = "0.3.6"
+authors = ["cty123"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -25,6 +25,7 @@ tokio-stream = { version = "0.1.7" }
 tokio-rustls = "0.22.0"
 uninit = "0.4.0"
 webpki-roots = "0.21.0"
+rustls-pemfile = "0.2.1"
 mockall = "0.10.2"
 
 [lib]

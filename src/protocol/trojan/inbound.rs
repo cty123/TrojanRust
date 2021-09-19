@@ -1,19 +1,21 @@
 use std::io::{Error, ErrorKind, Result};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use async_trait::async_trait;
 use log::info;
-use tokio::io::{AsyncRead, AsyncWrite, BufReader, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, BufStream, ReadBuf};
 
 use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::InboundStream;
 use crate::protocol::trojan::parser::parse;
 
 pub struct TrojanInboundStream<IO> {
-    stream: BufReader<IO>,
-    secret: Arc<Vec<u8>>,
+    stream: BufStream<IO>,
+}
+
+impl<IO> InboundStream for TrojanInboundStream<IO> where
+    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync
+{
 }
 
 impl<IO> AsyncRead for TrojanInboundStream<IO>
@@ -54,36 +56,29 @@ where
     }
 }
 
-#[async_trait]
-impl<IO> InboundStream for TrojanInboundStream<IO>
+impl<IO> TrojanInboundStream<IO>
 where
-    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync,
+    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    async fn handshake(&mut self) -> Result<InboundRequest> {
-        // Read request from inbound stream
-        let request = parse(&mut self.stream).await?;
+    pub async fn new(
+        stream: IO,
+        secret: &[u8],
+    ) -> Result<(InboundRequest, Box<dyn InboundStream>)> {
+        let mut outbound_stream = TrojanInboundStream {
+            stream: BufStream::with_capacity(256, 256, stream),
+        };
+
+        let request = parse(&mut outbound_stream).await?;
 
         info!("Received Trojan request {}", request.dump_request());
 
-        if !request.validate(&self.secret) {
+        if !request.validate(secret) {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 "Received invalid hex value",
             ));
         }
 
-        Ok(request.inbound_request())
-    }
-}
-
-impl<IO> TrojanInboundStream<IO>
-where
-    IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
-{
-    pub fn new(stream: IO, secret: Arc<Vec<u8>>) -> Box<dyn InboundStream> {
-        return Box::new(TrojanInboundStream {
-            stream: tokio::io::BufReader::with_capacity(256, stream),
-            secret,
-        });
+        Ok((request.inbound_request(), Box::new(outbound_stream)))
     }
 }

@@ -7,6 +7,7 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::config::base::InboundConfig;
 use crate::config::tls::make_server_config;
+use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::InboundStream;
 use crate::protocol::socks5::inbound::Socks5InboundStream;
 use crate::protocol::trojan::inbound::TrojanInboundStream;
@@ -58,7 +59,10 @@ impl Acceptor {
 
     /// Takes an inbound TCP stream, escalate to TLs if possible and then escalate to application level data stream
     /// to be ready to read user's request and process them.
-    pub async fn accept<IO>(&self, inbound_stream: IO) -> Result<Box<dyn InboundStream>>
+    pub async fn accept<IO>(
+        &self,
+        inbound_stream: IO,
+    ) -> Result<(InboundRequest, Box<dyn InboundStream>)>
     where
         IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
     {
@@ -71,9 +75,11 @@ impl Acceptor {
                     .unwrap()
                     .accept(inbound_stream)
                     .await?;
-                Ok(Socks5InboundStream::new(tls_stream, self.port))
+                Ok(Socks5InboundStream::new(tls_stream, self.port).await?)
             }
-            SupportedProtocols::SOCKS => Ok(Socks5InboundStream::new(inbound_stream, self.port)),
+            SupportedProtocols::SOCKS => {
+                Ok(Socks5InboundStream::new(inbound_stream, self.port).await?)
+            }
             // Trojan wih or without TLS
             SupportedProtocols::TROJAN if self.tls_acceptor.is_some() => {
                 let tls_stream = self
@@ -82,12 +88,11 @@ impl Acceptor {
                     .unwrap()
                     .accept(inbound_stream)
                     .await?;
-                Ok(TrojanInboundStream::new(tls_stream, self.secret.clone()))
+                Ok(TrojanInboundStream::new(tls_stream, &self.secret).await?)
             }
-            SupportedProtocols::TROJAN => Ok(TrojanInboundStream::new(
-                inbound_stream,
-                self.secret.clone(),
-            )),
+            SupportedProtocols::TROJAN => {
+                Ok(TrojanInboundStream::new(inbound_stream, &self.secret).await?)
+            }
             // Shutdown the connection if the protocol is currently unsupported
             _ => Err(Error::new(
                 ErrorKind::ConnectionReset,

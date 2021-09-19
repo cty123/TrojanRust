@@ -613,6 +613,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-pemfile"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eebeaeb360c87bfb72e84abdb3447159c0eaececf1bef2aecd65a8be949d1c9"
+dependencies = [
+ "base64",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -817,7 +826,7 @@ checksum = "a7f741b240f1a48843f9b8e0444fb55fb2a4ff67293b50a9179dfd5ea67f8d41"
 
 [[package]]
 name = "trojan-rust"
-version = "0.3.4"
+version = "0.3.6"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -829,6 +838,7 @@ dependencies = [
  "log",
  "mockall",
  "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "sha2",

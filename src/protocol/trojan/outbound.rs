@@ -1,16 +1,15 @@
 use std::io::Result;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufStream, ReadBuf};
 
 use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::OutboundStream;
 use crate::protocol::trojan::base::CRLF;
 
 pub struct TrojanOutboundStream<IO> {
-    stream: BufWriter<IO>,
+    stream: BufStream<IO>,
 }
 
 impl<IO> OutboundStream for TrojanOutboundStream<IO> where
@@ -66,7 +65,7 @@ where
         secret: &Vec<u8>,
     ) -> Result<Box<dyn OutboundStream>> {
         let mut stream = TrojanOutboundStream {
-            stream: BufWriter::with_capacity(256, stream),
+            stream: BufStream::with_capacity(256, 256, stream),
         };
 
         // Write request header
