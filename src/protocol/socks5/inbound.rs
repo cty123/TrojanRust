@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufStream, ReadBuf};
 
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::request::InboundRequest;
@@ -12,7 +12,7 @@ use crate::protocol::socks5::base::{ServerHello, VERSION};
 use crate::protocol::socks5::parser;
 
 pub struct Socks5InboundStream<IO> {
-    stream: BufReader<IO>,
+    stream: BufStream<IO>,
 }
 
 impl<IO> InboundStream for Socks5InboundStream<IO> where
@@ -76,9 +76,8 @@ where
         // TODO: Validate client hello message
         // Reply with server hello message
         let server_hello = ServerHello::new(0);
-        if let Err(e) = stream.write_all(&server_hello.to_bytes()).await {
-            return Err(e);
-        }
+        stream.write_all(&server_hello.to_bytes()).await?;
+        stream.flush().await?;
 
         Ok(())
     }
@@ -90,6 +89,7 @@ where
             .write_all(&IpAddress::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))).to_bytes_vec())
             .await?;
         stream.write_u16(port).await?;
+        stream.flush().await?;
 
         Ok(())
     }
@@ -101,7 +101,7 @@ where
 {
     pub async fn new(stream: IO, port: u16) -> Result<(InboundRequest, Box<dyn InboundStream>)> {
         let mut outbound_stream = Socks5InboundStream {
-            stream: BufReader::with_capacity(256, stream),
+            stream: BufStream::with_capacity(256, 256, stream),
         };
 
         // Read and reply for the initial client/server hello messages

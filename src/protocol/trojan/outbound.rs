@@ -76,6 +76,7 @@ where
         stream.write_all(&request.addr.to_bytes_vec()).await?;
         stream.write_u16(request.port).await?;
         stream.write_u16(CRLF).await?;
+        stream.flush().await?;
 
         // Return the outbound stream itself
         Ok(Box::new(stream))
