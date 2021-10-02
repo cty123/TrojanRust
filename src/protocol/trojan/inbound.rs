@@ -70,7 +70,7 @@ where
 
         let request = parse(&mut outbound_stream).await?;
 
-        info!("Received Trojan request {}", request.dump_request());
+        info!("Received request: trojan {}", request.to_string());
 
         if !request.validate(secret) {
             return Err(Error::new(

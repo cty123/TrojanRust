@@ -1,5 +1,4 @@
 use std::io::{Error, ErrorKind, Result};
-use std::sync::Arc;
 
 use sha2::{Digest, Sha224};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -16,12 +15,11 @@ use crate::proxy::base::SupportedProtocols;
 /// Acceptor handles incomming connection by escalating them to application level data stream based on
 /// the configuration. It is also responsible for escalating TCP connection to TLS connection if the user
 /// enabled TLS.
-#[derive(Clone)]
 pub struct Acceptor {
     tls_acceptor: Option<TlsAcceptor>,
     port: u16,
     protocol: SupportedProtocols,
-    secret: Arc<Vec<u8>>,
+    secret: Vec<u8>,
 }
 
 impl Acceptor {
@@ -53,7 +51,7 @@ impl Acceptor {
             tls_acceptor,
             port: inbound.port,
             protocol: inbound.protocol,
-            secret: Arc::from(secret),
+            secret,
         }
     }
 

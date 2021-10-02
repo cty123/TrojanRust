@@ -1,11 +1,9 @@
 use std::io::Result;
-use std::net::{IpAddr, Ipv4Addr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufStream, ReadBuf};
 
-use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::InboundStream;
 use crate::protocol::socks5::base::{ServerHello, VERSION};
@@ -84,10 +82,7 @@ where
 
     async fn write_request_ack(mut stream: IO, port: u16) -> Result<()> {
         // TODO: Have a better way to write back request ACK
-        stream.write_all(&[VERSION, 0, 0, 1]).await?;
-        stream
-            .write_all(&IpAddress::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))).to_bytes_vec())
-            .await?;
+        stream.write_all(&[VERSION, 0, 0, 1, 127, 0, 0, 1]).await?;
         stream.write_u16(port).await?;
         stream.flush().await?;
 

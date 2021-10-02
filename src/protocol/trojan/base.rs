@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
@@ -29,20 +31,6 @@ impl Request {
             addr,
             port,
         };
-    }
-
-    #[inline]
-    pub fn request_addr_port(&self) -> String {
-        return format!("{}:{}", self.addr.to_string(), self.port);
-    }
-
-    #[inline]
-    pub fn dump_request(&self) -> String {
-        return format!(
-            "[{} => {}]",
-            self.command.to_string(),
-            self.request_addr_port()
-        );
     }
 
     #[inline]
@@ -83,5 +71,17 @@ impl Request {
             addr: request.addr.clone(),
             port: request.port,
         }
+    }
+}
+
+impl fmt::Display for Request {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            fmt,
+            "{} {}:{}",
+            self.command.to_string(),
+            self.addr.to_string(),
+            self.port
+        )
     }
 }

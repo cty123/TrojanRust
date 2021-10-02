@@ -21,7 +21,6 @@ use crate::proxy::base::SupportedProtocols;
 /// Handler is responsible for taking user's request and process them and send back the result.
 /// It may need to dial to remote using TCP, UDP and TLS, in which it will be responsible for
 /// establishing a tranport level connection and escalate it to application data stream.
-#[derive(Clone)]
 pub struct Handler {
     addr_port: Option<(String, u16)>,
     protocol: SupportedProtocols,

@@ -62,7 +62,7 @@ where
     pub async fn new(
         stream: IO,
         request: &InboundRequest,
-        secret: &Vec<u8>,
+        secret: &[u8],
     ) -> Result<Box<dyn OutboundStream>> {
         let mut stream = TrojanOutboundStream {
             stream: BufStream::with_capacity(256, 256, stream),

@@ -61,14 +61,6 @@ impl RequestAck {
             port,
         };
     }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = BytesMut::with_capacity(128);
-        buf.put_slice(&[self.version, self.rep, self.rsv, 1]);
-        buf.put_slice(&self.addr.to_bytes_vec());
-        buf.put_u16(self.port);
-        return buf.to_vec();
-    }
 }
 
 impl Request {
@@ -88,11 +80,6 @@ impl Request {
             port,
             addr,
         };
-    }
-
-    #[inline]
-    pub fn request_addr_port(&self) -> String {
-        return format!("{}:{}", self.addr.to_string(), self.port);
     }
 
     #[inline]
