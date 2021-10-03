@@ -48,7 +48,7 @@ impl IpAddress {
 }
 
 impl DomainName {
-    pub fn to_bytes(&self) -> &Vec<u8> {
+    pub fn to_bytes(&self) -> &[u8] {
         &self.inner
     }
 }

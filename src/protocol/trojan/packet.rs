@@ -64,7 +64,7 @@ impl AsyncRead for PacketTrojanOutboundStream {
                 buf.put_slice(&ipv6.octets());
             }
             IpAddress::Domain(domain) => {
-                buf.put_slice(&domain.to_bytes());
+                buf.put_slice(domain.to_bytes());
             }
         }
         buf.put_slice(&self.port.to_be_bytes());
