@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::io::{Error, ErrorKind, Result};
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -55,7 +56,17 @@ impl AsyncRead for PacketTrojanOutboundStream {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<Result<()>> {
         buf.put_slice(&[self.atype.to_byte()]);
-        buf.put_slice(&self.addr.to_bytes_vec());
+        match &self.addr {
+            IpAddress::IpAddr(IpAddr::V4(ipv4)) => {
+                buf.put_slice(&ipv4.octets());
+            }
+            IpAddress::IpAddr(IpAddr::V6(ipv6)) => {
+                buf.put_slice(&ipv6.octets());
+            }
+            IpAddress::Domain(domain) => {
+                buf.put_slice(&domain.to_bytes());
+            }
+        }
         buf.put_slice(&self.port.to_be_bytes());
         buf.put_slice(&[0, 0, 0x0D, 0x0A]);
         let header_len = buf.filled().len();

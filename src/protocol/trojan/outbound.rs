@@ -1,9 +1,11 @@
 use std::io::Result;
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufStream, ReadBuf};
 
+use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::request::InboundRequest;
 use crate::protocol::common::stream::OutboundStream;
 use crate::protocol::trojan::base::CRLF;
@@ -73,7 +75,17 @@ where
         stream.write_u16(CRLF).await?;
         stream.write_u8(request.command.to_byte()).await?;
         stream.write_u8(request.atype.to_byte()).await?;
-        stream.write_all(&request.addr.to_bytes_vec()).await?;
+        match &request.addr {
+            IpAddress::IpAddr(IpAddr::V4(ipv4)) => {
+                stream.write_all(&ipv4.octets()).await?;
+            }
+            IpAddress::IpAddr(IpAddr::V6(ipv6)) => {
+                stream.write_all(&ipv6.octets()).await?;
+            }
+            IpAddress::Domain(domain) => {
+                stream.write_all(&domain.to_bytes()).await?;
+            }
+        }
         stream.write_u16(request.port).await?;
         stream.write_u16(CRLF).await?;
         stream.flush().await?;

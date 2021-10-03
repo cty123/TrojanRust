@@ -23,15 +23,6 @@ pub struct DomainName {
 
 impl IpAddress {
     #[inline]
-    pub fn to_bytes_vec(&self) -> Vec<u8> {
-        match self {
-            IpAddress::IpAddr(IpAddr::V4(ip)) => ip.octets().to_vec(),
-            IpAddress::IpAddr(IpAddr::V6(ip)) => ip.octets().to_vec(),
-            IpAddress::Domain(domain) => domain.inner.to_vec(),
-        }
-    }
-
-    #[inline]
     pub fn len(&self) -> usize {
         match self {
             IpAddress::IpAddr(IpAddr::V4(_)) => IPV4_SIZE,
@@ -53,6 +44,12 @@ impl IpAddress {
     #[inline]
     pub fn from_vec(addr: Vec<u8>) -> IpAddress {
         IpAddress::Domain(DomainName { inner: addr })
+    }
+}
+
+impl DomainName {
+    pub fn to_bytes(&self) -> &Vec<u8> {
+        &self.inner
     }
 }
 
