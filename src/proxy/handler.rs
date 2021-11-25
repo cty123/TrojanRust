@@ -2,11 +2,11 @@ use std::io::{Error, ErrorKind, Result};
 use std::sync::Arc;
 
 use log::info;
-use rustls::ClientConfig;
+use rustls::{ClientConfig, ServerName};
 use sha2::{Digest, Sha224};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
-use tokio_rustls::{webpki::DNSNameRef, TlsConnector};
+use tokio_rustls::TlsConnector;
 
 use crate::config::base::OutboundConfig;
 use crate::config::tls::make_client_config;
@@ -86,7 +86,11 @@ impl Handler {
     /// Given an abstract inbound stream, it will read the request to standard request format and then process it.
     /// After taking the request, the handler will then establish the outbound connection based on the user configuration,
     /// and transport data back and forth until one side terminate the connection.
-    pub async fn dispatch(&self, inbound_stream: Box<dyn InboundStream>, request: InboundRequest) -> Result<()> {
+    pub async fn dispatch(
+        &self,
+        inbound_stream: Box<dyn InboundStream>,
+        request: InboundRequest,
+    ) -> Result<()> {
         let outbound_stream = match self.handle(&request).await {
             Ok(stream) => stream,
             Err(e) => return Err(e),
@@ -134,14 +138,9 @@ impl Handler {
                 return match (self.tls_config.as_ref(), self.host_name.as_ref()) {
                     (Some(tls), Some(hname)) => {
                         let connector = TlsConnector::from(Arc::clone(tls));
-                        let domain = match DNSNameRef::try_from_ascii_str(hname) {
+                        let domain = match ServerName::try_from(hname.as_ref()) {
                             Ok(domain) => domain,
-                            Err(_) => {
-                                return Err(Error::new(
-                                    ErrorKind::InvalidInput,
-                                    "Failed to parse host name",
-                                ))
-                            }
+                            Err(_) => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse host name"))
                         };
                         let tls_stream = connector.connect(domain, connection).await?;
                         self.handle_protocol(tls_stream, request).await
