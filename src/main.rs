@@ -3,6 +3,7 @@ use std::io::{Error, ErrorKind, Result};
 use clap::{App, Arg};
 use log::{error, info};
 
+use trojan_rust::config::base::{InboundConfig, OutboundConfig};
 use trojan_rust::config::parser::reader_config;
 use trojan_rust::proxy::tcp_server::TcpServer;
 
@@ -11,12 +12,12 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     let matches = App::new("Trojan Rust")
-        .version("0.3")
+        .version("0.4")
         .author("cty123")
         .about("Trojan Rust is a rust implementation of the trojan protocol to circumvent GFW")
         .arg(
-            Arg::with_name("config")
-                .short("c")
+            Arg::new("config")
+                .short('c')
                 .long("config")
                 .value_name("FILE")
                 .help("Sets the config file, read ./config/config.json by default")
@@ -36,7 +37,17 @@ async fn main() -> Result<()> {
         }
     };
 
-    let server = match TcpServer::new(config.inbound, config.outbound) {
+    // TODO: Check the configuration and start GRPC server instead of the TCP server
+
+    start_tcp_server(config.inbound, config.outbound).await
+    // start_grpc_server(config.inbound, config.outbound).await
+}
+
+async fn start_tcp_server(
+    inbound_config: InboundConfig,
+    outbound_config: OutboundConfig,
+) -> Result<()> {
+    let server = match TcpServer::new(inbound_config, outbound_config) {
         Ok(server) => server,
         Err(e) => {
             error!("Failed to instantiate the server, {}", e);
@@ -50,4 +61,12 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[warn(unused_variables)]
+async fn start_grpc_server(
+    inbound_config: InboundConfig,
+    outbound_config: OutboundConfig,
+) -> Result<()> {
+    unimplemented!()
 }
