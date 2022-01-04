@@ -149,7 +149,7 @@ Run trojan-rust with specified config file
 ## Official release 0.4.0 and above(For general users)
 - [ ] Improve client mode performance.
 
-- [ ] Implement gRPC for transporting data
+- [x] Implement gRPC for transporting data
  
 - [ ] +[Delayed After Beta] Implement client side Trojan protocol with UDP over TCP.   
 
