@@ -86,10 +86,28 @@ Quick short script for your convenience,
     }
 }
 ```
+### For using GRPC as transport layer
+Just add GRPC to transport under inbound or outbound
+```json
+    "inbound": {
+        "protocol": "TROJAN",
+        "address": "0.0.0.0",
+        "secret": "123123",
+        "port": 8081,
+        "tls": {
+            "cert_path": "./cert.pem",
+            "key_path": "./key.pem"
+        },
+        "transport": "GRPC"
+    },
+    "outbound": {
+        "protocol": "DIRECT"
+    }
+```
 
 ## Run the program
 
-```
+```bash
 trojan-rust -h
 
 Trojan Rust 0.0.1
