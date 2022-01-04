@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::proxy::base::SupportedProtocols;
+use crate::{protocol::common::request::TransportProtocol, proxy::base::SupportedProtocols};
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -14,6 +14,7 @@ pub struct InboundConfig {
     pub address: String,
     pub port: u16,
     pub secret: Option<String>,
+    pub transport: Option<TransportProtocol>,
 
     pub tls: Option<InboundTlsConfig>,
 }
@@ -24,6 +25,7 @@ pub struct OutboundConfig {
     pub address: Option<String>,
     pub port: Option<u16>,
     pub secret: Option<String>,
+    pub transport: Option<TransportProtocol>,
 
     pub tls: Option<OutboundTlsConfig>,
 }

@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package trojan_rust.transport.grpc;
+
+service ProxyService {
+  rpc Proxy (stream GrpcDatagram) returns (stream GrpcDatagram);
+}
+
+message GrpcDatagram {
+    bytes payload = 1;
+}

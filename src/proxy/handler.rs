@@ -6,6 +6,7 @@ use rustls::{ClientConfig, ServerName};
 use sha2::{Digest, Sha224};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
+use tokio::sync::mpsc;
 use tokio_rustls::TlsConnector;
 
 use crate::config::base::OutboundConfig;
@@ -17,6 +18,8 @@ use crate::protocol::trojan::base::HEX_SIZE;
 use crate::protocol::trojan::outbound::TrojanOutboundStream;
 use crate::protocol::trojan::packet::PacketTrojanOutboundStream;
 use crate::proxy::base::SupportedProtocols;
+use crate::transport::grpc::proxy_service_client::ProxyServiceClient;
+use crate::transport::grpc::GrpcDataOutboundStream;
 
 /// Handler is responsible for taking user's request and process them and send back the result.
 /// It may need to dial to remote using TCP, UDP and TLS, in which it will be responsible for
@@ -27,6 +30,7 @@ pub struct Handler {
     tls_config: Option<Arc<ClientConfig>>,
     host_name: Option<String>,
     secret: Vec<u8>,
+    transport: Option<TransportProtocol>,
 }
 
 impl Handler {
@@ -80,6 +84,7 @@ impl Handler {
             tls_config,
             host_name,
             secret,
+            transport: outbound.transport,
         })
     }
 
@@ -91,9 +96,11 @@ impl Handler {
         inbound_stream: Box<dyn InboundStream>,
         request: InboundRequest,
     ) -> Result<()> {
-        let outbound_stream = match self.handle(&request).await {
-            Ok(stream) => stream,
-            Err(e) => return Err(e),
+        let outbound_stream = match self.transport {
+            Some(_transport) if matches!(TransportProtocol::GRPC, _transport) => {
+                self.handle_grpc(request).await?
+            }
+            _ => self.handle(&request).await?,
         };
 
         let (mut source_read, mut source_write) = tokio::io::split(inbound_stream);
@@ -121,7 +128,7 @@ impl Handler {
                 };
 
                 // Establish raw TCP connection with remote
-                let connection = match TcpStream::connect((addr.to_string(), port)).await {
+                let connection = match TcpStream::connect((addr.as_ref(), port)).await {
                     Ok(connection) => {
                         info!("Established connection to remote host at {}:{}", addr, port);
                         connection
@@ -165,6 +172,49 @@ impl Handler {
                     )),
                 }
             }
+            TransportProtocol::GRPC => Err(Error::new(
+                ErrorKind::ConnectionReset,
+                "unsupported protocol",
+            )),
+        };
+    }
+
+    async fn handle_grpc(&self, request: InboundRequest) -> Result<Box<dyn OutboundStream>> {
+        let (addr, port) = match self.addr_port.clone() {
+            Some(addr_port) => addr_port,
+            None => request.addr_port(),
+        };
+
+        let endpoint =
+            match tonic::transport::Channel::from_shared(format!("http://{}:{}", addr, port)) {
+                Ok(endpoint) => endpoint,
+                Err(e) => return Err(Error::new(ErrorKind::AddrNotAvailable, e)),
+            };
+
+        let channel = match endpoint.connect().await {
+            Ok(channel) => channel,
+            Err(e) => return Err(Error::new(ErrorKind::ConnectionReset, e)),
+        };
+
+        let mut client = ProxyServiceClient::new(channel);
+        let (tx, rx) = mpsc::channel(64);
+        let read_half = match client
+            .proxy(tokio_stream::wrappers::ReceiverStream::new(rx))
+            .await
+        {
+            Ok(response) => response.into_inner(),
+            Err(e) => return Err(Error::new(ErrorKind::Interrupted, e)),
+        };
+
+        return match TrojanOutboundStream::new(
+            GrpcDataOutboundStream::new(read_half, tx),
+            &request,
+            &self.secret,
+        )
+        .await
+        {
+            Ok(stream) => Ok(stream),
+            Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
         };
     }
 

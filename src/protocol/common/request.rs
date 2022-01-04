@@ -1,11 +1,14 @@
+use serde::{Serialize, Deserialize};
+
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TransportProtocol {
     TCP,
     UDP,
+    GRPC,
 }
 
 pub struct InboundRequest {

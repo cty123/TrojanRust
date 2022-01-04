@@ -1,6 +1,6 @@
 use std::io::Result;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 
 use crate::protocol::common::addr::{IpAddress, IPV4_SIZE, IPV6_SIZE};
 use crate::protocol::common::atype::Atype;
@@ -9,7 +9,7 @@ use crate::protocol::trojan::base::{Request, HEX_SIZE};
 
 pub async fn parse<IO>(mut stream: IO) -> Result<Request>
 where
-    IO: AsyncReadExt + AsyncWriteExt + Unpin,
+    IO: AsyncReadExt + Unpin,
 {
     // Read hex value for authentication
     let mut hex = [0u8; HEX_SIZE];

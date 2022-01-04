@@ -5,6 +5,8 @@ use log::{error, info};
 
 use trojan_rust::config::base::{InboundConfig, OutboundConfig};
 use trojan_rust::config::parser::reader_config;
+use trojan_rust::protocol::common::request::TransportProtocol;
+use trojan_rust::proxy::grpc_server::GrpcServer;
 use trojan_rust::proxy::tcp_server::TcpServer;
 
 #[tokio::main]
@@ -37,10 +39,12 @@ async fn main() -> Result<()> {
         }
     };
 
-    // TODO: Check the configuration and start GRPC server instead of the TCP server
-
-    start_tcp_server(config.inbound, config.outbound).await
-    // start_grpc_server(config.inbound, config.outbound).await
+    return match config.inbound.transport {
+        Some(_protocol) if matches!(TransportProtocol::GRPC, _protocol) => {
+            start_grpc_server(config.inbound, config.outbound).await
+        }
+        _ => start_tcp_server(config.inbound, config.outbound).await,
+    };
 }
 
 async fn start_tcp_server(
@@ -63,10 +67,26 @@ async fn start_tcp_server(
     Ok(())
 }
 
-#[warn(unused_variables)]
 async fn start_grpc_server(
     inbound_config: InboundConfig,
     outbound_config: OutboundConfig,
 ) -> Result<()> {
-    unimplemented!()
+    let server = match GrpcServer::new(inbound_config, outbound_config) {
+        Ok(server) => server,
+        Err(e) => {
+            error!("Failed to instantiate the server, {}", e);
+            return Err(e);
+        }
+    };
+
+    return match server.start().await {
+        Err(e) => {
+            error!("Server failure: {}, graceful shutdown", e.to_string());
+            Err(e)
+        }
+        Ok(()) => {
+            info!("Finished running server, exiting...");
+            Ok(())
+        }
+    };
 }
