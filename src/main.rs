@@ -71,7 +71,7 @@ async fn start_grpc_server(
     inbound_config: InboundConfig,
     outbound_config: OutboundConfig,
 ) -> Result<()> {
-    let server = match GrpcServer::new(inbound_config, outbound_config) {
+    let server = match GrpcServer::new(inbound_config, outbound_config).await {
         Ok(server) => server,
         Err(e) => {
             error!("Failed to instantiate the server, {}", e);

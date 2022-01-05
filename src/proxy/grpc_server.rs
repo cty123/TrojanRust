@@ -4,10 +4,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use sha2::{Digest, Sha224};
+use tokio::fs::read;
 use tokio::sync::mpsc;
 use tokio_stream;
 use tokio_stream::Stream;
-use tonic::transport::Server;
+use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status, Streaming};
 
 use crate::config::base::{InboundConfig, OutboundConfig};
@@ -75,10 +76,14 @@ pub struct GrpcServer {
     local_addr: String,
     local_port: u16,
     service: GrpcProxyService,
+    identity: Option<Identity>,
 }
 
 impl GrpcServer {
-    pub fn new(inbound_config: InboundConfig, outbound_config: OutboundConfig) -> io::Result<Self> {
+    pub async fn new(
+        inbound_config: InboundConfig,
+        outbound_config: OutboundConfig,
+    ) -> io::Result<Self> {
         let secret = Sha224::digest(inbound_config.secret.as_ref().unwrap().as_bytes())
             .iter()
             .map(|x| format!("{:02x}", x))
@@ -88,10 +93,20 @@ impl GrpcServer {
 
         let service = GrpcProxyService::new(secret, Handler::new(outbound_config)?);
 
+        let identity = match inbound_config.tls {
+            Some(tls_config) => {
+                let cert = read(tls_config.cert_path).await?;
+                let key = read(tls_config.key_path).await?;
+                Some(Identity::from_pem(cert, key))
+            }
+            None => None,
+        };
+
         Ok(Self {
             local_addr: inbound_config.address,
             local_port: inbound_config.port,
             service,
+            identity,
         })
     }
 
@@ -105,7 +120,14 @@ impl GrpcServer {
             .parse()
             .unwrap();
 
-        return match Server::builder()
+        let mut server = match self.identity {
+            Some(identity) => Server::builder()
+                .tls_config(ServerTlsConfig::new().identity(identity))
+                .unwrap(),
+            None => Server::builder(),
+        };
+
+        return match server
             .add_service(ProxyServiceServer::new(self.service))
             .serve(addr)
             .await

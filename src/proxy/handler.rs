@@ -1,13 +1,13 @@
-use std::io::{Error, ErrorKind, Result};
-use std::sync::Arc;
-
 use log::info;
-use rustls::{ClientConfig, ServerName};
+use rustls::ServerName;
 use sha2::{Digest, Sha224};
+use std::io::{Error, ErrorKind, Result};
+use std::ptr::NonNull;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_rustls::TlsConnector;
+use tonic::transport::{ClientTlsConfig, Endpoint};
 
 use crate::config::base::OutboundConfig;
 use crate::config::tls::make_client_config;
@@ -27,8 +27,8 @@ use crate::transport::grpc::GrpcDataOutboundStream;
 pub struct Handler {
     addr_port: Option<(String, u16)>,
     protocol: SupportedProtocols,
-    tls_config: Option<Arc<ClientConfig>>,
-    host_name: Option<String>,
+    tls: Option<(TlsConnector, ServerName)>,
+    grpc_channel: Option<Endpoint>,
     secret: Vec<u8>,
     transport: Option<TransportProtocol>,
 }
@@ -39,9 +39,22 @@ impl Handler {
     /// TLS first or not.
     pub fn new(outbound: OutboundConfig) -> Result<Handler> {
         // Get outbound TLS configuration and host dns name if TLS is enabled
-        let (tls_config, host_name) = match outbound.tls {
-            Some(cfg) => (Some(make_client_config(&cfg)), Some(cfg.host_name)),
-            None => (None, None),
+        let tls = match &outbound.tls {
+            Some(cfg) => {
+                let tls_client_config = make_client_config(&cfg);
+                let connector = TlsConnector::from(tls_client_config);
+                let domain = match ServerName::try_from(cfg.host_name.as_ref()) {
+                    Ok(domain) => domain,
+                    Err(_) => {
+                        return Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            "Failed to parse host name",
+                        ))
+                    }
+                };
+                Some((connector, domain))
+            }
+            None => None,
         };
 
         // Attempt to extract destination address and port from OutboundConfig.
@@ -63,6 +76,26 @@ impl Handler {
             (None, None) => None,
         };
 
+        // To enable GRPC, the client MUST specify the target address and port. Otherwise it will fall back to TCP.
+        let grpc_channel = match &addr_port {
+            Some((addr, port)) => {
+                let endpoint =
+                    tonic::transport::Channel::from_shared(format!("http://{}:{}", addr, port))
+                        .unwrap();
+
+                // Configure TLS if TLS is enabled
+                match &outbound.tls {
+                    Some(cfg) => Some(
+                        endpoint
+                            .tls_config(ClientTlsConfig::new().domain_name(&cfg.host_name))
+                            .unwrap(),
+                    ),
+                    None => Some(endpoint),
+                }
+            }
+            None => None,
+        };
+
         // Extract the plaintext of the secret and process it
         let secret = match outbound.protocol {
             SupportedProtocols::TROJAN if outbound.secret.is_some() => {
@@ -81,8 +114,8 @@ impl Handler {
         Ok(Handler {
             protocol: outbound.protocol,
             addr_port,
-            tls_config,
-            host_name,
+            grpc_channel,
+            tls,
             secret,
             transport: outbound.transport,
         })
@@ -97,10 +130,12 @@ impl Handler {
         request: InboundRequest,
     ) -> Result<()> {
         let outbound_stream = match self.transport {
-            Some(_transport) if matches!(TransportProtocol::GRPC, _transport) => {
+            Some(_transport)
+                if matches!(TransportProtocol::GRPC, _transport) && self.grpc_channel.is_some() =>
+            {
                 self.handle_grpc(request).await?
             }
-            _ => self.handle(&request).await?,
+            _ => self.handle(request).await?,
         };
 
         let (mut source_read, mut source_write) = tokio::io::split(inbound_stream);
@@ -119,7 +154,7 @@ impl Handler {
 
     /// Given an inbound request, handle the request by establishing a new TCP/UDP/TLS connection based on inbound
     /// handler configuration. If the connection is TCP, will also check if should escalate the connection to TLS.
-    async fn handle(&self, request: &InboundRequest) -> Result<Box<dyn OutboundStream>> {
+    async fn handle(&self, request: InboundRequest) -> Result<Box<dyn OutboundStream>> {
         return match request.transport_protocol {
             TransportProtocol::TCP => {
                 let (addr, port) = match self.addr_port.clone() {
@@ -142,23 +177,12 @@ impl Handler {
                 };
 
                 // Escalate raw TCP connection to TLS
-                return match (self.tls_config.as_ref(), self.host_name.as_ref()) {
-                    (Some(tls), Some(hname)) => {
-                        let connector = TlsConnector::from(Arc::clone(tls));
-                        let domain = match ServerName::try_from(hname.as_ref()) {
-                            Ok(domain) => domain,
-                            Err(_) => return Err(Error::new(ErrorKind::InvalidInput, "Failed to parse host name"))
-                        };
-                        let tls_stream = connector.connect(domain, connection).await?;
-                        self.handle_protocol(tls_stream, request).await
-                    },
-                    (Some(_), None) => {
-                        return Err(Error::new(
-                            ErrorKind::InvalidInput,
-                            "Failed to find destination address, destination port or host name from configuration",
-                        ))
-                    },
-                    (None, _) => self.handle_protocol(connection, request).await
+                return match &self.tls {
+                    Some((connector, domain)) => {
+                        let tls_stream = connector.connect(domain.clone(), connection).await?;
+                        self.handle_protocol(tls_stream, &request).await
+                    }
+                    None => self.handle_protocol(connection, &request).await,
                 };
             }
             TransportProtocol::UDP => {
@@ -180,16 +204,15 @@ impl Handler {
     }
 
     async fn handle_grpc(&self, request: InboundRequest) -> Result<Box<dyn OutboundStream>> {
-        let (addr, port) = match self.addr_port.clone() {
-            Some(addr_port) => addr_port,
-            None => request.addr_port(),
+        let endpoint = match &self.grpc_channel {
+            Some(endpoint) => endpoint,
+            None => {
+                return Err(Error::new(
+                    ErrorKind::Unsupported,
+                    "bug: failed to retrieve endpoint",
+                ))
+            }
         };
-
-        let endpoint =
-            match tonic::transport::Channel::from_shared(format!("http://{}:{}", addr, port)) {
-                Ok(endpoint) => endpoint,
-                Err(e) => return Err(Error::new(ErrorKind::AddrNotAvailable, e)),
-            };
 
         let channel = match endpoint.connect().await {
             Ok(channel) => channel,
