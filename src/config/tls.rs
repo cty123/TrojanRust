@@ -35,12 +35,12 @@ pub struct NoCertificateVerification {}
 impl ServerCertVerifier for NoCertificateVerification {
     fn verify_server_cert(
         &self,
-        end_entity: &Certificate,
-        intermediates: &[Certificate],
-        server_name: &ServerName,
-        scts: &mut dyn Iterator<Item = &[u8]>,
-        ocsp_response: &[u8],
-        now: SystemTime,
+        _end_entity: &Certificate,
+        _intermediates: &[Certificate],
+        _server_name: &ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: SystemTime,
     ) -> Result<ServerCertVerified, Error> {
         Ok(ServerCertVerified::assertion())
     }
@@ -151,12 +151,13 @@ fn load_private_key(path: &str) -> std::io::Result<PrivateKey> {
     return match read_one(&mut reader) {
         Ok(opt) => match opt {
             Some(item) => match item {
-                Item::X509Certificate(_) => Err(std::io::Error::new(
+                Item::RSAKey(key) => Ok(rustls::PrivateKey(key)),
+                Item::PKCS8Key(key) => Ok(rustls::PrivateKey(key)),
+                Item::ECKey(key) => Ok(rustls::PrivateKey(key)),
+                _ => Err(std::io::Error::new(
                     ErrorKind::InvalidInput,
                     "Found cert in ssl key file",
                 )),
-                Item::RSAKey(key) => Ok(rustls::PrivateKey(key)),
-                Item::PKCS8Key(key) => Ok(rustls::PrivateKey(key)),
             },
             None => Err(std::io::Error::new(
                 ErrorKind::InvalidInput,
