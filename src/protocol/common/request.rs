@@ -1,4 +1,6 @@
-use serde::{Serialize, Deserialize};
+use std::net::SocketAddr;
+
+use serde::{Deserialize, Serialize};
 
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
@@ -38,7 +40,7 @@ impl InboundRequest {
     }
 
     #[inline]
-    pub fn addr_port(&self) -> (String, u16) {
-        (self.addr.to_string(), self.port)
+    pub fn into_destination_address(&self) -> SocketAddr {
+        format!("{}:{}", self.addr, self.port).parse().unwrap()
     }
 }

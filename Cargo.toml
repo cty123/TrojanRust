@@ -37,6 +37,7 @@ uninit = "0.5.0"
 webpki-roots = "0.22.2"
 rustls-pemfile = "0.3.0"
 mockall = "0.11.0"
+lazy_static = "1.4.0"
 
 [build-dependencies]
 tonic-build = { version = "0.6.2", features = ["compression"] }

@@ -1,14 +1,13 @@
 {
     "inbound": {
         "protocol": "TROJAN",
-        "address": "[::1]",
+        "address": "0.0.0.0",
         "secret": "123123",
-        "port": 50051,
+        "port": 8081,
         "tls": {
-            "cert_path": "C:\\Users\\ctych\\Projects\\TrojanRust\\config\\cert.pem",
-            "key_path": "C:\\Users\\ctych\\Projects\\TrojanRust\\config\\key.pem"
-        },
-        "transport": "GRPC"
+            "cert_path": "/home/cty123/Projects/TrojanRust/config/cert.pem",
+            "key_path": "/home/cty123/Projects/TrojanRust/config/key.pem"
+        }
     },
     "outbound": {
         "protocol": "DIRECT"

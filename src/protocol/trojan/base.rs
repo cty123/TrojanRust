@@ -9,7 +9,7 @@ pub const HEX_SIZE: usize = 56;
 pub const CRLF: u16 = 0x0D0A;
 
 pub struct Request {
-    hex: [u8; HEX_SIZE],
+    hex: Vec<u8>,
     command: Command,
     atype: Atype,
     addr: IpAddress,
@@ -18,7 +18,7 @@ pub struct Request {
 
 impl Request {
     pub fn new(
-        hex: [u8; HEX_SIZE],
+        hex: Vec<u8>,
         command: Command,
         atype: Atype,
         addr: IpAddress,
@@ -63,7 +63,7 @@ impl Request {
     }
 
     #[inline]
-    pub fn from_request(request: &InboundRequest, secret: [u8; 56]) -> Request {
+    pub fn from_request(request: &InboundRequest, secret: Vec<u8>) -> Request {
         Request {
             hex: secret,
             command: request.command,

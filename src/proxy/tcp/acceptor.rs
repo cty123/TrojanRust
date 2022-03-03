@@ -1,16 +1,15 @@
-use std::io::{Error, ErrorKind, Result};
-
-use sha2::{Digest, Sha224};
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::TlsAcceptor;
-
 use crate::config::base::InboundConfig;
 use crate::config::tls::make_server_config;
 use crate::protocol::common::request::InboundRequest;
-use crate::protocol::common::stream::InboundStream;
-use crate::protocol::socks5::inbound::Socks5InboundStream;
-use crate::protocol::trojan::inbound::TrojanInboundStream;
+use crate::protocol::common::stream::{StandardStream, StandardTcpStream};
+use crate::protocol::socks5;
+use crate::protocol::trojan;
 use crate::proxy::base::SupportedProtocols;
+
+use sha2::{Digest, Sha224};
+use std::io::{Error, ErrorKind, Result};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_rustls::TlsAcceptor;
 
 /// Acceptor handles incomming connection by escalating them to application level data stream based on
 /// the configuration. It is also responsible for escalating TCP connection to TLS connection if the user
@@ -55,15 +54,12 @@ impl Acceptor {
         }
     }
 
-    /// Takes an inbound TCP stream, escalate to TLs if possible and then escalate to application level data stream
+    /// Takes an inbound TCP stream, escalate to TLS if possible and then escalate to application level data stream
     /// to be ready to read user's request and process them.
-    pub async fn accept<IO>(
+    pub async fn accept<T: AsyncRead + AsyncWrite + Unpin>(
         &self,
-        inbound_stream: IO,
-    ) -> Result<(InboundRequest, Box<dyn InboundStream>)>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
-    {
+        inbound_stream: T,
+    ) -> Result<(InboundRequest, StandardStream<StandardTcpStream<T>>)> {
         match self.protocol {
             // Socks5 with or without TLS
             SupportedProtocols::SOCKS if self.tls_acceptor.is_some() => {
@@ -73,12 +69,12 @@ impl Acceptor {
                     .unwrap()
                     .accept(inbound_stream)
                     .await?;
-                Ok(Socks5InboundStream::new(tls_stream, self.port).await?)
+                Ok(socks5::accept(StandardTcpStream::RustlsServer(tls_stream), self.port).await?)
             }
             SupportedProtocols::SOCKS => {
-                Ok(Socks5InboundStream::new(inbound_stream, self.port).await?)
+                Ok(socks5::accept(StandardTcpStream::Plain(inbound_stream), self.port).await?)
             }
-            // Trojan wih or without TLS
+            // Trojan with or without TLS
             SupportedProtocols::TROJAN if self.tls_acceptor.is_some() => {
                 let tls_stream = self
                     .tls_acceptor
@@ -86,10 +82,14 @@ impl Acceptor {
                     .unwrap()
                     .accept(inbound_stream)
                     .await?;
-                Ok(TrojanInboundStream::new(tls_stream, &self.secret).await?)
+
+                Ok(
+                    trojan::accept(StandardTcpStream::RustlsServer(tls_stream), &self.secret)
+                        .await?,
+                )
             }
             SupportedProtocols::TROJAN => {
-                Ok(TrojanInboundStream::new(inbound_stream, &self.secret).await?)
+                Ok(trojan::accept(StandardTcpStream::Plain(inbound_stream), &self.secret).await?)
             }
             // Shutdown the connection if the protocol is currently unsupported
             _ => Err(Error::new(
