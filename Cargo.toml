@@ -19,7 +19,7 @@ rustls = { version = "0.20.3", features = ["dangerous_configuration"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 sha2 = { version = "0.10.1" }
-tokio = { version = "1.16.1", features = ["full"] }
+tokio = { version = "1.7.0", features = ["full"] }
 tokio-util = { version = "0.7.0", features = ["full"] }
 tokio-stream = { version = "0.1.8" }
 tokio-rustls = "0.23.2"
