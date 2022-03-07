@@ -1,10 +1,9 @@
-use std::net::SocketAddr;
-
-use serde::{Deserialize, Serialize};
-
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
+
+use serde::{Deserialize, Serialize};
+use std::net::{SocketAddr, ToSocketAddrs};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TransportProtocol {
@@ -41,6 +40,18 @@ impl InboundRequest {
 
     #[inline]
     pub fn into_destination_address(&self) -> SocketAddr {
-        format!("{}:{}", self.addr, self.port).parse().unwrap()
+        // let addrs: Vec<SocketAddr> = format!("{}:{}", self.addr.to_string(), self.port)
+        //     .to_socket_addrs()
+        //     .unwrap()
+        //     .collect()
+
+        // addrs.first().unwrap()
+
+        let addrs: Vec<SocketAddr> = (self.addr.to_string(), self.port)
+            .to_socket_addrs()
+            .unwrap()
+            .collect();
+
+        addrs.into_iter().nth(0).unwrap()
     }
 }
