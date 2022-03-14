@@ -40,13 +40,6 @@ impl InboundRequest {
 
     #[inline]
     pub fn into_destination_address(&self) -> SocketAddr {
-        // let addrs: Vec<SocketAddr> = format!("{}:{}", self.addr.to_string(), self.port)
-        //     .to_socket_addrs()
-        //     .unwrap()
-        //     .collect()
-
-        // addrs.first().unwrap()
-
         let addrs: Vec<SocketAddr> = (self.addr.to_string(), self.port)
             .to_socket_addrs()
             .unwrap()

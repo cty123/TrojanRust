@@ -15,7 +15,6 @@ pub struct InboundConfig {
     pub port: u16,
     pub secret: Option<String>,
     pub transport: Option<TransportProtocol>,
-
     pub tls: Option<InboundTlsConfig>,
 }
 
@@ -26,7 +25,6 @@ pub struct OutboundConfig {
     pub port: Option<u16>,
     pub secret: Option<String>,
     pub transport: Option<TransportProtocol>,
-
     pub tls: Option<OutboundTlsConfig>,
 }
 

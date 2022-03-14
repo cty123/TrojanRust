@@ -1,3 +1,3 @@
 pub mod base;
-pub mod grpc_server;
+pub mod grpc;
 pub mod tcp;

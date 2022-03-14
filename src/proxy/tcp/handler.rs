@@ -6,6 +6,9 @@ use crate::protocol::trojan;
 use crate::protocol::trojan::handshake;
 use crate::protocol::trojan::HEX_SIZE;
 use crate::proxy::base::SupportedProtocols;
+use crate::proxy::grpc::client::{handle_client_data, handle_server_data};
+use crate::transport::grpc::proxy_service_client::ProxyServiceClient;
+use crate::transport::grpc::{GrpcPacket, TrojanRequest};
 
 use log::{error, info};
 use rustls::ServerName;
@@ -15,6 +18,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::mpsc;
 use tokio_rustls::TlsConnector;
 
 /// Handler is responsible for taking user's request and process them and send back the result.
@@ -72,26 +76,6 @@ impl Handler {
             (None, None) => None,
         };
 
-        // To enable GRPC, the client MUST specify the target address and port. Otherwise it will fall back to TCP.
-        // let grpc_channel = match &addr_port {
-        //     Some((addr, port)) => {
-        //         let endpoint =
-        //             tonic::transport::Channel::from_shared(format!("http://{}:{}", addr, port))
-        //                 .unwrap();
-
-        //         // Configure TLS if TLS is enabled
-        //         match &outbound.tls {
-        //             Some(cfg) => Some(
-        //                 endpoint
-        //                     .tls_config(ClientTlsConfig::new().domain_name(&cfg.host_name))
-        //                     .unwrap(),
-        //             ),
-        //             None => Some(endpoint),
-        //         }
-        //     }
-        //     None => None,
-        // };
-
         // Extract the plaintext of the secret and process it
         let secret = match outbound.protocol {
             SupportedProtocols::TROJAN if outbound.secret.is_some() => {
@@ -126,12 +110,77 @@ impl Handler {
         request: InboundRequest,
     ) -> Result<()> {
         match request.transport_protocol {
+            TransportProtocol::TCP if self.transport.is_some() => {
+                self.handle_grpc_stream(request, inbound_stream).await?
+            }
             TransportProtocol::TCP => self.handle_byte_stream(request, inbound_stream).await?,
             TransportProtocol::UDP => self.handle_packet_stream(request, inbound_stream).await?,
             _ => return Ok(()),
         }
 
         Ok(())
+    }
+
+    async fn handle_grpc_stream<T: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        request: InboundRequest,
+        inbound_stream: StandardStream<StandardTcpStream<T>>,
+    ) -> Result<()> {
+        let mut server = ProxyServiceClient::connect(format!(
+            "http://{}",
+            self.destination.unwrap().to_string()
+        ))
+        .await
+        .unwrap();
+
+        let (mut tx, rx) = mpsc::channel(64);
+
+        match tx
+            .send(GrpcPacket {
+                packet_type: 1,
+                trojan: Some(TrojanRequest {
+                    hex: self.secret.clone(),
+                    atype: request.atype.to_byte() as u32,
+                    command: request.command.to_byte() as u32,
+                    address: request.addr.to_string(),
+                    port: request.port as u32,
+                }),
+                datagram: None,
+            })
+            .await
+        {
+            Ok(_) => (),
+            Err(_) => {
+                return Err(Error::new(
+                    ErrorKind::ConnectionRefused,
+                    "failed to write request data",
+                ))
+            }
+        }
+
+        let mut server_reader = match server
+            .proxy(tokio_stream::wrappers::ReceiverStream::new(rx))
+            .await
+        {
+            Ok(response) => response.into_inner(),
+            Err(e) => return Err(Error::new(ErrorKind::Interrupted, e)),
+        };
+
+        let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream.into_inner());
+
+        return match tokio::try_join!(
+            handle_server_data(&mut client_reader, &mut tx),
+            handle_client_data(&mut client_writer, &mut server_reader)
+        ) {
+            Ok(_) => {
+                info!("Connection finished");
+                Ok(())
+            }
+            Err(e) => {
+                error!("Encountered {} error while handling the transport", e);
+                Err(Error::new(ErrorKind::ConnectionReset, "Connection reset"))
+            }
+        };
     }
 
     /// Handle TCP like byte stream and finish data transfer

@@ -1,21 +1,31 @@
+use crate::config::base::{InboundConfig, OutboundConfig};
 use crate::proxy::tcp::acceptor::Acceptor;
 use crate::proxy::tcp::handler::Handler;
 use log::{info, warn};
 use std::io::Result;
-use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 
-pub async fn start(
-    address: SocketAddr,
-    acceptor: &'static Acceptor,
-    handler: &'static Handler,
-) -> Result<()> {
+pub async fn start(inbound_config: InboundConfig, outbound_config: OutboundConfig) -> Result<()> {
+    let address = (inbound_config.address.clone(), inbound_config.port)
+        .to_socket_addrs()
+        .unwrap()
+        .next()
+        .unwrap();
+
     let listener = TcpListener::bind(address).await?;
+    let (acceptor, handler) = (
+        Arc::new(Acceptor::new(&inbound_config)),
+        Arc::new(Handler::new(&outbound_config).unwrap()),
+    );
 
     loop {
         let (socket, addr) = listener.accept().await?;
 
         info!("Received new connection from {}", addr);
+
+        let (acceptor, handler) = (acceptor.clone(), handler.clone());
 
         tokio::spawn(async move {
             let (request, inbound_stream) = match acceptor.accept(socket).await {
