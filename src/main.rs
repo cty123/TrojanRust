@@ -1,6 +1,7 @@
 use clap::ArgMatches;
 use clap::{App, Arg};
 use lazy_static::lazy_static;
+use log::info;
 use std::io::Result;
 use trojan_rust::config::parser::reader_config;
 use trojan_rust::protocol::common::request::TransportProtocol;
@@ -33,9 +34,11 @@ async fn main() -> Result<()> {
 
     match inbound_config.transport {
         Some(_protocol) if matches!(TransportProtocol::GRPC, _protocol) => {
+            info!("Using Grpc server");
             grpc::server::start(inbound_config, outbound_config).await;
         }
         _ => {
+            info!("Using Tcp server");
             tcp::server::start(inbound_config, outbound_config).await;
         }
     };

@@ -54,7 +54,11 @@ pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin>(
 ) -> io::Result<()> {
     loop {
         let mut buf = BytesMut::with_capacity(4096);
-        server_reader.read_buf(&mut buf).await?;
+        let n = server_reader.read_buf(&mut buf).await?;
+
+        if n == 0 {
+            return Ok(());
+        }
 
         match client_writer
             .send(Ok(GrpcPacket {
