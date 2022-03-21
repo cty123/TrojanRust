@@ -6,8 +6,8 @@ use tokio::sync::mpsc::Sender;
 use tonic::Streaming;
 
 pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin>(
-    client_writer: &mut WriteHalf<StandardTcpStream<T>>,
-    server_reader: &mut Streaming<GrpcPacket>,
+    mut client_writer: WriteHalf<StandardTcpStream<T>>,
+    mut server_reader: Streaming<GrpcPacket>,
 ) -> Result<()> {
     loop {
         let message = match server_reader.message().await {
@@ -27,9 +27,9 @@ pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin>(
     }
 }
 
-pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin>(
-    client_reader: &mut ReadHalf<StandardTcpStream<T>>,
-    server_writer: &mut Sender<GrpcPacket>,
+pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin + Send>(
+    mut client_reader: ReadHalf<StandardTcpStream<T>>,
+    server_writer: Sender<GrpcPacket>,
 ) -> Result<()> {
     loop {
         let mut buf = bytes::BytesMut::with_capacity(4096);

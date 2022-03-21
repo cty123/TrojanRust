@@ -2,6 +2,7 @@ use crate::protocol::common::stream::StandardTcpStream;
 use crate::proxy::grpc::server::{handle_client_data, handle_server_data};
 use futures::Stream;
 use log::{error, info};
+use std::io::{Error, ErrorKind};
 use std::pin::Pin;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -39,21 +40,24 @@ impl ProxyService for GrpcService {
             Err(_) => return Err(Status::aborted("failed to read incoming message")),
         };
 
-        let (mut tx, rx) = mpsc::channel(64);
+        let (tx, rx) = mpsc::channel(64);
 
         tokio::spawn(async move {
             if let Some(trojan) = request.trojan {
                 let address = trojan.address;
                 let port = trojan.port;
-                let (mut server_reader, mut server_writer) =
-                    match TcpStream::connect((address, port as u16)).await {
+                let (server_reader, server_writer) =
+                    match TcpStream::connect((address.clone(), port as u16)).await {
                         Ok(stream) => tokio::io::split(StandardTcpStream::Plain(stream)),
-                        Err(e) => return Err(e),
+                        Err(e) => {
+                            error!("Failed to connect to {}:{}", address, port);
+                            return Err(e);
+                        }
                     };
 
                 return match tokio::try_join!(
-                    handle_server_data(&mut client_reader, &mut server_writer),
-                    handle_client_data(&mut tx, &mut server_reader)
+                    tokio::spawn(handle_server_data(client_reader, server_writer)),
+                    tokio::spawn(handle_client_data(tx, server_reader))
                 ) {
                     Ok(_) => {
                         info!("Connection finished");
@@ -61,7 +65,7 @@ impl ProxyService for GrpcService {
                     }
                     Err(e) => {
                         error!("Encountered {} error while handling the transport", e);
-                        Err(e)
+                        Err(Error::new(ErrorKind::ConnectionReset, e))
                     }
                 };
             }

@@ -104,7 +104,7 @@ impl Handler {
     /// Given an abstract inbound stream, it will read the request to standard request format and then process it.
     /// After taking the request, the handler will then establish the outbound connection based on the user configuration,
     /// and transport data back and forth until one side terminate the connection.
-    pub async fn dispatch<T: AsyncRead + AsyncWrite + Unpin>(
+    pub async fn dispatch<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         &self,
         inbound_stream: StandardStream<StandardTcpStream<T>>,
         request: InboundRequest,
@@ -121,7 +121,7 @@ impl Handler {
         Ok(())
     }
 
-    async fn handle_grpc_stream<T: AsyncRead + AsyncWrite + Unpin>(
+    async fn handle_grpc_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         &self,
         request: InboundRequest,
         inbound_stream: StandardStream<StandardTcpStream<T>>,
@@ -133,7 +133,7 @@ impl Handler {
         .await
         .unwrap();
 
-        let (mut tx, rx) = mpsc::channel(64);
+        let (tx, rx) = mpsc::channel(64);
 
         match tx
             .send(GrpcPacket {
@@ -158,7 +158,7 @@ impl Handler {
             }
         }
 
-        let mut server_reader = match server
+        let server_reader = match server
             .proxy(tokio_stream::wrappers::ReceiverStream::new(rx))
             .await
         {
@@ -166,25 +166,25 @@ impl Handler {
             Err(e) => return Err(Error::new(ErrorKind::Interrupted, e)),
         };
 
-        let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream.into_inner());
+        let (client_reader, client_writer) = tokio::io::split(inbound_stream.into_inner());
 
         return match tokio::try_join!(
-            handle_server_data(&mut client_reader, &mut tx),
-            handle_client_data(&mut client_writer, &mut server_reader)
+            tokio::spawn(handle_server_data(client_reader, tx)),
+            tokio::spawn(handle_client_data(client_writer, server_reader))
         ) {
             Ok(_) => {
                 info!("Connection finished");
                 Ok(())
             }
             Err(e) => {
-                error!("Encountered {} error while handling the transport", e);
+                error!("Encountered error while handling the transport: {}", e);
                 Err(Error::new(ErrorKind::ConnectionReset, "Connection reset"))
             }
         };
     }
 
     /// Handle TCP like byte stream and finish data transfer
-    async fn handle_byte_stream<T: AsyncRead + AsyncWrite + Unpin>(
+    async fn handle_byte_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         &self,
         request: InboundRequest,
         inbound_stream: StandardStream<StandardTcpStream<T>>,
@@ -195,15 +195,19 @@ impl Handler {
         let (mut target_read, mut target_write) = tokio::io::split(outbound_stream.into_inner());
 
         return match tokio::try_join!(
-            tokio::io::copy(&mut source_read, &mut target_write),
-            tokio::io::copy(&mut target_read, &mut source_write),
+            tokio::spawn(async move {
+                return tokio::io::copy(&mut source_read, &mut target_write).await;
+            }),
+            tokio::spawn(async move {
+                return tokio::io::copy(&mut target_read, &mut source_write).await;
+            }),
         ) {
             Ok(_) => {
                 info!("Connection finished");
                 Ok(())
             }
             Err(e) => {
-                error!("Encountered {} error while handling the transport", e);
+                error!("Encountered error while handling the transport: {}", e);
                 Err(Error::new(ErrorKind::ConnectionReset, "Connection reset"))
             }
         };

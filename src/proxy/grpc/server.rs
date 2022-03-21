@@ -27,14 +27,14 @@ pub async fn start(inbound_config: InboundConfig, outbound_config: OutboundConfi
 }
 
 pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin>(
-    client_reader: &mut Streaming<GrpcPacket>,
-    server_writer: &mut WriteHalf<StandardTcpStream<T>>,
+    mut client_reader: Streaming<GrpcPacket>,
+    mut server_writer: WriteHalf<StandardTcpStream<T>>,
 ) -> io::Result<()> {
     loop {
         let data = match client_reader.message().await {
             Ok(res) => match res {
                 Some(packet) => packet,
-                None => continue,
+                None => return Ok(()),
             },
             Err(_) => {
                 return Err(Error::new(
@@ -49,12 +49,13 @@ pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin>(
 }
 
 pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin>(
-    client_writer: &mut Sender<Result<GrpcPacket, Status>>,
-    server_reader: &mut ReadHalf<StandardTcpStream<T>>,
+    client_writer: Sender<Result<GrpcPacket, Status>>,
+    mut server_reader: ReadHalf<StandardTcpStream<T>>,
 ) -> io::Result<()> {
     loop {
         let mut buf = BytesMut::with_capacity(4096);
         server_reader.read_buf(&mut buf).await?;
+
         match client_writer
             .send(Ok(GrpcPacket {
                 packet_type: 0,
@@ -67,7 +68,7 @@ pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin>(
             Err(_) => {
                 return Err(Error::new(
                     ErrorKind::ConnectionRefused,
-                    "failed to write to client",
+                    "failed to write to back GRPC",
                 ))
             }
         }
