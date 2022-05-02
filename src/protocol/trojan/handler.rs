@@ -3,16 +3,17 @@ use crate::protocol::common::request::InboundRequest;
 use crate::protocol::trojan::parser::parse_udp;
 use std::io::{Error, ErrorKind, Result};
 use std::net::IpAddr;
+use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
 
 pub async fn handle_client_data<R: AsyncRead + Unpin>(
-    client_reader: &mut R,
-    server_writer: &UdpSocket,
+    mut client_reader: R,
+    server_writer: Arc<UdpSocket>,
 ) -> Result<()> {
     loop {
         // Parse the UDP header and obtain the payload size
-        let payload_length = parse_udp(client_reader).await?;
+        let payload_length = parse_udp(&mut client_reader).await?;
 
         // Create payload buffer
         let mut payload = vec![0u8; payload_length];
@@ -35,8 +36,8 @@ pub async fn handle_client_data<R: AsyncRead + Unpin>(
 }
 
 pub async fn handle_server_data<W: AsyncWrite + Unpin>(
-    client_writer: &mut W,
-    server_reader: &UdpSocket,
+    mut client_writer: W,
+    server_reader: Arc<UdpSocket>,
     request: InboundRequest,
 ) -> Result<()> {
     loop {

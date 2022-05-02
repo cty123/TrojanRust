@@ -7,23 +7,23 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-trait = "0.1.52"
+async-trait = "0.1.53"
 byteorder = "1.4.3"
 bytes = "1.1.0"
 clap = "3.0.14"
 env_logger = "0.9.0"
 futures = { version = "0.3.21", features = ["thread-pool"] }
 itertools = "0.10.3"
-log = "0.4.14"
+log = "0.4"
 rustls = { version = "0.20.3", features = ["dangerous_configuration"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
-sha2 = { version = "0.10.1" }
-tokio = { version = "1.7.0", features = ["full"] }
-tokio-util = { version = "0.7.0", features = ["full"] }
+sha2 = { version = "0.10.2" }
+tokio = { version = "1.18.0", features = ["full"] }
+tokio-util = { version = "0.7.1", features = ["full"] }
 tokio-stream = { version = "0.1.8" }
-tokio-rustls = "0.23.2"
-tonic = { version = "0.6.2", features = [
+tokio-rustls = "0.23.3"
+tonic = { version = "0.7.1", features = [
     "transport",
     "codegen",
     "tls-roots",
@@ -32,15 +32,15 @@ tonic = { version = "0.6.2", features = [
     "prost",
     "compression",
 ] }
-prost = "0.9.0"
+prost = "0.10.1"
 uninit = "0.5.0"
 webpki-roots = "0.22.2"
-rustls-pemfile = "0.3.0"
+rustls-pemfile = "1.0.0"
 mockall = "0.11.0"
 lazy_static = "1.4.0"
 
 [build-dependencies]
-tonic-build = { version = "0.6.2", features = ["compression"] }
+tonic-build = { version = "0.7.1", features = ["compression"] }
 
 [lib]
 name = "trojan_rust"

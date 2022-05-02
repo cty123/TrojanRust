@@ -28,18 +28,27 @@ lazy_static! {
 async fn main() -> Result<()> {
     env_logger::init();
 
+    // Read configuration file from arguments
     let config_path = ARGS.value_of("config").unwrap_or("./config/config.json");
+    info!("Reading trojan configuration file from: {}", config_path);
+
+    // Error out immediately if failing to parse config file
     let config = reader_config(config_path).unwrap();
+
+    // Extract inbound and outbound configuration
     let (inbound_config, outbound_config) = (config.inbound, config.outbound);
 
+    // Currently only supporting GRPC server and TCP server
+    // TODO: Add a dedicated field in order to indicate which type of server to use
+    // TODO: Support more types of server, like UDP
     match inbound_config.transport {
         Some(_protocol) if matches!(TransportProtocol::GRPC, _protocol) => {
-            info!("Using Grpc server");
-            grpc::server::start(inbound_config, outbound_config).await;
+            info!("Starting GRPC server to accept inbound traffic");
+            grpc::server::start(inbound_config, outbound_config).await?;
         }
         _ => {
-            info!("Using Tcp server");
-            tcp::server::start(inbound_config, outbound_config).await;
+            info!("Starting Tcp server to accept inbound traffic");
+            tcp::server::start(inbound_config, outbound_config).await?;
         }
     };
 

@@ -10,7 +10,7 @@ use crate::proxy::grpc::client::{handle_client_data, handle_server_data};
 use crate::transport::grpc::proxy_service_client::ProxyServiceClient;
 use crate::transport::grpc::{GrpcPacket, TrojanRequest};
 
-use log::{error, info};
+use log::info;
 use rustls::ServerName;
 use sha2::{Digest, Sha224};
 use std::io::{Error, ErrorKind, Result};
@@ -168,19 +168,13 @@ impl Handler {
 
         let (client_reader, client_writer) = tokio::io::split(inbound_stream.into_inner());
 
-        return match tokio::try_join!(
-            tokio::spawn(handle_server_data(client_reader, tx)),
-            tokio::spawn(handle_client_data(client_writer, server_reader))
-        ) {
-            Ok(_) => {
-                info!("Connection finished");
-                Ok(())
-            }
-            Err(e) => {
-                error!("Encountered error while handling the transport: {}", e);
-                Err(Error::new(ErrorKind::ConnectionReset, "Connection reset"))
-            }
-        };
+        tokio::select!(
+            _ = tokio::spawn(handle_server_data(client_reader, tx)) => (),
+            _ = tokio::spawn(handle_client_data(client_writer, server_reader)) => ()
+        );
+
+        info!("Connection finished");
+        Ok(())
     }
 
     /// Handle TCP like byte stream and finish data transfer
@@ -194,23 +188,13 @@ impl Handler {
         let (mut source_read, mut source_write) = tokio::io::split(inbound_stream.into_inner());
         let (mut target_read, mut target_write) = tokio::io::split(outbound_stream.into_inner());
 
-        return match tokio::try_join!(
-            tokio::spawn(async move {
-                return tokio::io::copy(&mut source_read, &mut target_write).await;
-            }),
-            tokio::spawn(async move {
-                return tokio::io::copy(&mut target_read, &mut source_write).await;
-            }),
-        ) {
-            Ok(_) => {
-                info!("Connection finished");
-                Ok(())
-            }
-            Err(e) => {
-                error!("Encountered error while handling the transport: {}", e);
-                Err(Error::new(ErrorKind::ConnectionReset, "Connection reset"))
-            }
-        };
+        tokio::select!(
+            _ = tokio::spawn(async move {tokio::io::copy(&mut source_read, &mut target_write).await}) => (),
+            _ = tokio::spawn(async move {tokio::io::copy(&mut target_read, &mut source_write).await}) => (),
+        );
+
+        info!("Connection finished");
+        Ok(())
     }
 
     async fn dial_tcp_outbound(
@@ -227,7 +211,6 @@ impl Handler {
             Some((connector, domain)) => {
                 let connection = connector.connect(domain.clone(), connection).await?;
                 StandardTcpStream::RustlsClient(connection)
-                // self.handle_tcp_outbound(connection, request).await
             }
             None => StandardTcpStream::Plain(connection),
         };
@@ -235,7 +218,7 @@ impl Handler {
         self.handle_tcp_outbound(connection, request).await
     }
 
-    async fn handle_packet_stream<T: AsyncRead + AsyncWrite + Unpin>(
+    async fn handle_packet_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         &self,
         request: InboundRequest,
         inbound_stream: StandardStream<StandardTcpStream<T>>,
@@ -247,23 +230,18 @@ impl Handler {
         };
 
         // Setup the reader and writer for both the client and server so that we can transport the data
-        let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream.into_inner());
+        let (client_reader, client_writer) = tokio::io::split(inbound_stream.into_inner());
         let (server_reader, server_writer) = (socket.clone(), socket.clone());
 
         // Assume the protocol is always trojan
-        return match tokio::try_join!(
-            trojan::handle_client_data(&mut client_reader, &server_writer),
-            trojan::handle_server_data(&mut client_writer, &server_reader, request)
-        ) {
-            Ok(_) => {
-                info!("Connection finished");
-                Ok(())
-            }
-            Err(e) => {
-                error!("Encountered {} error while handing the transport", e);
-                Err(Error::new(ErrorKind::ConnectionReset, "Connection reset"))
-            }
-        };
+        tokio::select!(
+            _ = tokio::spawn(trojan::handle_client_data(client_reader, server_writer)) => (),
+            _= tokio::spawn(trojan::handle_server_data(client_writer, server_reader, request)) => ()
+        );
+
+        info!("Connection finished");
+
+        Ok(())
     }
 
     async fn dial_udp_outbound(&self, request: &InboundRequest) -> Result<UdpSocket> {

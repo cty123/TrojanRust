@@ -3,7 +3,6 @@ use crate::protocol::common::stream::StandardTcpStream;
 use crate::transport::grpc::proxy_service_server::ProxyServiceServer;
 use crate::transport::grpc::GrpcPacket;
 use crate::transport::grpc::GrpcService;
-use bytes::BytesMut;
 use std::io::{self, Error, ErrorKind};
 use std::net::ToSocketAddrs;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
@@ -11,19 +10,36 @@ use tokio::sync::mpsc::Sender;
 use tonic::transport::Server;
 use tonic::{Status, Streaming};
 
-pub async fn start(inbound_config: InboundConfig, outbound_config: OutboundConfig) {
-    let address = (inbound_config.address.clone(), inbound_config.port)
+const BUFFER_SIZE: usize = 4096;
+
+pub async fn start(
+    inbound_config: InboundConfig,
+    _outbound_config: OutboundConfig,
+) -> io::Result<()> {
+    // Extract the address that the server should listen on
+    let address = match (inbound_config.address.as_ref(), inbound_config.port)
         .to_socket_addrs()
         .unwrap()
         .next()
-        .unwrap();
+    {
+        Some(addr) => addr,
+        None => {
+            return Err(Error::new(
+                ErrorKind::AddrNotAvailable,
+                "incorrect address in configuration",
+            ))
+        }
+    };
 
-    let mut server = Server::builder();
-    server
+    // Initialize and start the GRPC server to serve GRPC requests
+    return match Server::builder()
         .add_service(ProxyServiceServer::new(GrpcService::new()))
         .serve(address)
         .await
-        .unwrap();
+    {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Error::new(ErrorKind::AddrInUse, e)),
+    };
 }
 
 pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin>(
@@ -34,7 +50,7 @@ pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin>(
         let data = match client_reader.message().await {
             Ok(res) => match res {
                 Some(packet) => packet,
-                None => return Ok(()),
+                None => continue,
             },
             Err(_) => {
                 return Err(Error::new(
@@ -44,7 +60,10 @@ pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin>(
             }
         };
 
-        server_writer.write_all(&data.datagram.unwrap()).await?;
+        match data.datagram {
+            Some(vec) => server_writer.write_all(&vec).await?,
+            None => continue,
+        }
     }
 }
 
@@ -53,18 +72,20 @@ pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin>(
     mut server_reader: ReadHalf<StandardTcpStream<T>>,
 ) -> io::Result<()> {
     loop {
-        let mut buf = BytesMut::with_capacity(4096);
+        let mut buf = Vec::with_capacity(BUFFER_SIZE);
         let n = server_reader.read_buf(&mut buf).await?;
 
         if n == 0 {
             return Ok(());
         }
 
+        buf.truncate(n);
+
         match client_writer
             .send(Ok(GrpcPacket {
                 packet_type: 0,
                 trojan: None,
-                datagram: Some(buf.to_vec()),
+                datagram: Some(buf),
             }))
             .await
         {
