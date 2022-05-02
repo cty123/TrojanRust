@@ -21,20 +21,9 @@ fn test_acceptor_initialization() {
 
 #[tokio::test]
 async fn test_buffer() {
-    let mut buf = BytesMut::with_capacity(16);
-    unsafe {
-        buf.set_len(10);
-    }
-    // buf.reserve(16);
-    // let mut buf = [MaybeUninit::<u8>::uninit(); 10];
-
-    // let mut buf = ReadBuf::uninit(&mut buf);
+    let mut buf = Vec::with_capacity(32);
 
     let (mut server, mut client) = tokio::io::duplex(512);
 
     server.write(&[2u8; 16]).await.unwrap();
-
-    client.read(&mut buf).await.unwrap();
-
-    println!("{:?}", buf);
 }
