@@ -21,7 +21,7 @@ fn test_acceptor_initialization() {
 
 #[tokio::test]
 async fn test_buffer() {
-    let mut buf = Vec::with_capacity(32);
+    let mut buf:Vec<u8> = Vec::with_capacity(32);
 
     let (mut server, mut client) = tokio::io::duplex(512);
 
