@@ -5,6 +5,7 @@ use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 
 pub const VERSION: u8 = 5;
 
+#[allow(dead_code)]
 pub struct Request {
     version: u8,
     command: Command,
@@ -14,6 +15,7 @@ pub struct Request {
     port: u16,
 }
 
+#[allow(dead_code)]
 pub struct ClientHello {
     version: u8,
     method_size: u8,
@@ -21,11 +23,13 @@ pub struct ClientHello {
     methods: u8,
 }
 
+#[allow(dead_code)]
 pub struct ServerHello {
     version: u8,
     method: u8,
 }
 
+#[allow(dead_code)]
 pub struct RequestAck {
     version: u8,
     rep: u8,
