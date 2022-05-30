@@ -1,4 +1,4 @@
-use crate::config::base::OutboundConfig;
+use crate::config::base::{OutboundConfig, OutboundMode};
 use crate::config::tls::make_client_config;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::protocol::common::stream::{StandardStream, StandardTcpStream};
@@ -25,12 +25,11 @@ use tokio_rustls::TlsConnector;
 /// It may need to dial to remote using TCP, UDP and TLS, in which it will be responsible for
 /// establishing a tranport level connection and escalate it to application data stream.
 pub struct Handler {
+    mode: OutboundMode,
     destination: Option<SocketAddr>,
     protocol: SupportedProtocols,
     tls: Option<(TlsConnector, ServerName)>,
-    // grpc_channel: Option<Endpoint>,
     secret: Vec<u8>,
-    transport: Option<TransportProtocol>,
 }
 
 impl Handler {
@@ -92,12 +91,11 @@ impl Handler {
         };
 
         Ok(Handler {
+            mode: outbound.mode.clone(),
             protocol: outbound.protocol,
             destination,
-            // grpc_channel,
             tls,
             secret,
-            transport: outbound.transport,
         })
     }
 
@@ -109,13 +107,15 @@ impl Handler {
         inbound_stream: StandardStream<StandardTcpStream<T>>,
         request: InboundRequest,
     ) -> Result<()> {
-        match request.transport_protocol {
-            TransportProtocol::TCP if self.transport.is_some() => {
-                self.handle_grpc_stream(request, inbound_stream).await?
-            }
-            TransportProtocol::TCP => self.handle_byte_stream(request, inbound_stream).await?,
-            TransportProtocol::UDP => self.handle_packet_stream(request, inbound_stream).await?,
-            _ => return Ok(()),
+        match self.mode {
+            OutboundMode::DIRECT => match request.transport_protocol {
+                TransportProtocol::TCP => self.handle_byte_stream(request, inbound_stream).await?,
+                TransportProtocol::UDP => {
+                    self.handle_packet_stream(request, inbound_stream).await?
+                }
+            },
+            OutboundMode::GRPC => self.handle_grpc_stream(request, inbound_stream).await?,
+            OutboundMode::QUIC => todo!(),
         }
 
         Ok(())
@@ -126,12 +126,20 @@ impl Handler {
         request: InboundRequest,
         inbound_stream: StandardStream<StandardTcpStream<T>>,
     ) -> Result<()> {
-        let mut server = ProxyServiceClient::connect(format!(
-            "http://{}",
-            self.destination.unwrap().to_string()
-        ))
-        .await
-        .unwrap();
+        let endpoint = match self.tls {
+            None => format!("http://{}", self.destination.unwrap()),
+            Some(_) => format!("https://{}", self.destination.unwrap()),
+        };
+
+        let mut server = match ProxyServiceClient::connect(endpoint).await {
+            Ok(server) => server,
+            Err(e) => {
+                return Err(Error::new(
+                    ErrorKind::ConnectionRefused,
+                    format!("failed to connect to remote server: {}", e),
+                ))
+            }
+        };
 
         let (tx, rx) = mpsc::channel(64);
 

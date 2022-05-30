@@ -1,15 +1,17 @@
 {
     "inbound": {
-        "protocol": "TROJAN",
+        "mode": "GRPC/TCP/QUIC",
+        "protocol": "TROJAN/SOCKS",
         "address": "0.0.0.0",
-        "secret": "123123",
         "port": 8081,
         "tls": {
-            "cert_path": "/home/cty123/Projects/TrojanRust/config/cert.pem",
-            "key_path": "/home/cty123/Projects/TrojanRust/config/key.pem"
+            "cert_path": "",
+            "key_path": ""
         }
     },
+
     "outbound": {
-        "protocol": "DIRECT"
+        "mode": "DIRECT/TCP/GRPC/QUIC",
+        "protocol": "DIRECT/TROJAN"
     }
 }

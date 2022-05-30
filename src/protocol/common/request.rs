@@ -9,7 +9,6 @@ use std::net::{SocketAddr, ToSocketAddrs};
 pub enum TransportProtocol {
     TCP,
     UDP,
-    GRPC,
 }
 
 pub struct InboundRequest {

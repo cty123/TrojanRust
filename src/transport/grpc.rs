@@ -13,6 +13,7 @@ use tonic::Request;
 use tonic::Response;
 use tonic::{self, Status, Streaming};
 
+// TODO: Need more discretion in detemining the value for channel size, or make it configurable 
 const CHANNEL_SIZE: usize = 128;
 
 pub struct GrpcService();
