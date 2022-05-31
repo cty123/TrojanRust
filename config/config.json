@@ -1,17 +1,12 @@
 {
     "inbound": {
-        "mode": "GRPC/TCP/QUIC",
-        "protocol": "TROJAN/SOCKS",
+        "mode": "TCP",
+        "protocol": "SOCKS",
         "address": "0.0.0.0",
-        "port": 8081,
-        "tls": {
-            "cert_path": "",
-            "key_path": ""
-        }
+        "port": 8081
     },
-
     "outbound": {
-        "mode": "DIRECT/TCP/GRPC/QUIC",
-        "protocol": "DIRECT/TROJAN"
+        "mode": "DIRECT",
+        "protocol": "DIRECT"
     }
 }

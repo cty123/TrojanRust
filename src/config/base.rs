@@ -19,6 +19,7 @@ pub enum InboundMode {
 #[derive(Serialize, Deserialize, Clone)]
 pub enum OutboundMode {
     DIRECT,
+    TCP,
     GRPC,
     QUIC,
 }

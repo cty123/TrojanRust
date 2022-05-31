@@ -36,7 +36,7 @@ pub async fn accept<T: AsyncRead + AsyncWrite + Unpin>(
 }
 
 /// Helper function to establish Trojan connection to remote server
-pub async fn handshake<T: AsyncRead + AsyncWrite + Unpin>(
+pub async fn handshake<T: AsyncWrite + Unpin>(
     mut stream: T,
     request: InboundRequest,
     secret: &[u8],

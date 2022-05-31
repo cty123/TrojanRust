@@ -1,5 +1,5 @@
 use crate::config::base::{OutboundConfig, OutboundMode};
-use crate::config::tls::make_client_config;
+use crate::config::tls::{make_client_config, NoCertificateVerification};
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::protocol::common::stream::{StandardStream, StandardTcpStream};
 use crate::protocol::trojan;
@@ -10,6 +10,7 @@ use crate::proxy::grpc::client::{handle_client_data, handle_server_data};
 use crate::transport::grpc::proxy_service_client::ProxyServiceClient;
 use crate::transport::grpc::{GrpcPacket, TrojanRequest};
 
+use futures::StreamExt;
 use log::info;
 use rustls::ServerName;
 use sha2::{Digest, Sha224};
@@ -108,15 +109,111 @@ impl Handler {
         request: InboundRequest,
     ) -> Result<()> {
         match self.mode {
-            OutboundMode::DIRECT => match request.transport_protocol {
-                TransportProtocol::TCP => self.handle_byte_stream(request, inbound_stream).await?,
-                TransportProtocol::UDP => {
-                    self.handle_packet_stream(request, inbound_stream).await?
-                }
-            },
+            OutboundMode::DIRECT => self.handle_direct_stream(request, inbound_stream).await?,
+            OutboundMode::TCP => self.handle_tcp_stream(request, inbound_stream).await?,
             OutboundMode::GRPC => self.handle_grpc_stream(request, inbound_stream).await?,
-            OutboundMode::QUIC => todo!(),
+            OutboundMode::QUIC => self.handle_quic_stream(request, inbound_stream).await?,
         }
+
+        Ok(())
+    }
+
+    /// Handle direct data transport without any proxy protocol
+    async fn handle_direct_stream<T: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        request: InboundRequest,
+        inbound_stream: StandardStream<StandardTcpStream<T>>,
+    ) -> Result<()> {
+        match request.transport_protocol {
+            TransportProtocol::TCP => {
+                let addr = request.into_destination_address();
+
+                // Connect to remote server from the proxy request
+                let outbound_stream = match TcpStream::connect(addr).await {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        return Err(Error::new(
+                            ErrorKind::ConnectionRefused,
+                            format!("failed to connect to tcp {}: {}", addr, e),
+                        ))
+                    }
+                };
+
+                // Setup the reader and writer for both the client and server so that we can transport the data
+                let (mut client_reader, mut client_writer) =
+                    tokio::io::split(inbound_stream.into_inner());
+                let (mut server_reader, mut server_writer) = tokio::io::split(outbound_stream);
+
+                tokio::select!(
+                    _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+                    _ = tokio::io::copy(&mut server_reader, &mut client_writer) => (),
+                );
+            }
+            TransportProtocol::UDP => {
+                let addr = request.into_destination_address();
+
+                // Establish UDP connection to remote host
+                let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
+                match socket.connect(request.into_destination_address()).await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        return Err(Error::new(
+                            ErrorKind::ConnectionRefused,
+                            format!("failed to connect to udp {}: {}", addr, e),
+                        ))
+                    }
+                }
+
+                // Setup the reader and writer for both the client and server so that we can transport the data
+                let (client_reader, client_writer) = tokio::io::split(inbound_stream.into_inner());
+                let (server_reader, server_writer) = (socket.clone(), socket.clone());
+
+                tokio::select!(
+                    _ = trojan::handle_client_data(client_reader, server_writer) => (),
+                    _ = trojan::handle_server_data(client_writer, server_reader, request) => ()
+                );
+            }
+        };
+
+        info!("Connection finished");
+
+        Ok(())
+    }
+
+    async fn handle_quic_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
+        &self,
+        request: InboundRequest,
+        inbound_stream: StandardStream<StandardTcpStream<T>>,
+    ) -> Result<()> {
+        // Dial remote proxy server
+        let roots = rustls::RootCertStore::empty();
+        let client_crypto = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_custom_certificate_verifier(Arc::new(NoCertificateVerification {}))
+            .with_no_client_auth();
+        let mut endpoint = quinn::Endpoint::client("[::]:0".parse().unwrap()).unwrap();
+        endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(client_crypto)));
+
+        // Establish connection with remote proxy server using QUIC protocol
+        let mut connection = endpoint
+            .connect("127.0.0.1:8081".parse().unwrap(), "example.com")
+            .unwrap()
+            .await
+            .unwrap();
+
+        let quinn::NewConnection {
+            connection: conn, ..
+        } = connection;
+
+        let (mut server_writer, mut server_reader) = conn.open_bi().await.unwrap();
+        let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream.into_inner());
+
+        handshake(&mut server_writer, request, &self.secret).await;
+
+        tokio::select!(
+            _ = tokio::spawn(async move {tokio::io::copy(&mut client_reader, &mut server_writer).await}) => (),
+            _ = tokio::spawn(async move {tokio::io::copy(&mut server_reader, &mut client_writer).await}) => (),
+        );
 
         Ok(())
     }
@@ -185,99 +282,59 @@ impl Handler {
         Ok(())
     }
 
-    /// Handle TCP like byte stream and finish data transfer
-    async fn handle_byte_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
+    async fn handle_tcp_stream<T: AsyncRead + AsyncWrite + Unpin>(
         &self,
         request: InboundRequest,
         inbound_stream: StandardStream<StandardTcpStream<T>>,
     ) -> Result<()> {
-        let outbound_stream = self.dial_tcp_outbound(request).await?;
-
-        let (mut source_read, mut source_write) = tokio::io::split(inbound_stream.into_inner());
-        let (mut target_read, mut target_write) = tokio::io::split(outbound_stream.into_inner());
-
-        tokio::select!(
-            _ = tokio::spawn(async move {tokio::io::copy(&mut source_read, &mut target_write).await}) => (),
-            _ = tokio::spawn(async move {tokio::io::copy(&mut target_read, &mut source_write).await}) => (),
-        );
-
-        info!("Connection finished");
-        Ok(())
-    }
-
-    async fn dial_tcp_outbound(
-        &self,
-        request: InboundRequest,
-    ) -> Result<StandardStream<StandardTcpStream<TcpStream>>> {
-        let dest = match self.destination {
-            Some(dest) => dest,
-            None => request.into_destination_address(),
+        // Establish the initial connection with remote server
+        let connection = match self.destination {
+            Some(dest) => TcpStream::connect(dest).await?,
+            None => {
+                return Err(Error::new(
+                    ErrorKind::NotConnected,
+                    "missing address of the remote server",
+                ))
+            }
         };
 
-        let connection = TcpStream::connect(dest).await?;
-        let connection = match &self.tls {
-            Some((connector, domain)) => {
-                let connection = connector.connect(domain.clone(), connection).await?;
-                StandardTcpStream::RustlsClient(connection)
-            }
+        // Escalate the connection to TLS connection if tls config is present
+        let stream = match &self.tls {
+            Some((connector, domain)) => StandardTcpStream::RustlsClient(
+                connector.connect(domain.clone(), connection).await?,
+            ),
             None => StandardTcpStream::Plain(connection),
         };
 
-        self.handle_tcp_outbound(connection, request).await
-    }
-
-    async fn handle_packet_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
-        &self,
-        request: InboundRequest,
-        inbound_stream: StandardStream<StandardTcpStream<T>>,
-    ) -> Result<()> {
-        // Establish UDP connection to remote host
-        let socket = match self.dial_udp_outbound(&request).await {
-            Ok(s) => Arc::new(s),
-            Err(e) => return Err(e),
-        };
-
-        // Setup the reader and writer for both the client and server so that we can transport the data
-        let (client_reader, client_writer) = tokio::io::split(inbound_stream.into_inner());
-        let (server_reader, server_writer) = (socket.clone(), socket.clone());
-
-        // Assume the protocol is always trojan
-        tokio::select!(
-            _ = tokio::spawn(trojan::handle_client_data(client_reader, server_writer)) => (),
-            _= tokio::spawn(trojan::handle_server_data(client_writer, server_reader, request)) => ()
-        );
-
-        info!("Connection finished");
-
-        Ok(())
-    }
-
-    async fn dial_udp_outbound(&self, request: &InboundRequest) -> Result<UdpSocket> {
-        let socket = UdpSocket::bind("0.0.0.0:0").await?;
-        socket.connect(request.into_destination_address()).await?;
-        Ok(socket)
-    }
-
-    #[inline]
-    async fn handle_tcp_outbound<T: AsyncRead + AsyncWrite + Unpin>(
-        &self,
-        stream: T,
-        request: InboundRequest,
-    ) -> Result<StandardStream<T>> {
-        return match self.protocol {
-            SupportedProtocols::DIRECT => Ok(StandardStream::new(stream)),
+        // Handshake to form the proxy stream
+        let outbound_stream = match self.protocol {
             SupportedProtocols::TROJAN => {
+                // Check Trojan secret match
                 if self.secret.len() != HEX_SIZE {
                     return Err(Error::new(
                         ErrorKind::InvalidInput,
                         format!("Hex in trojan protocol is not {} bytes", HEX_SIZE),
                     ));
                 }
-                Ok(handshake(stream, request, &self.secret).await?)
+
+                // Start handshake to establish proxy stream
+                handshake(stream, request, &self.secret).await?
             }
             SupportedProtocols::SOCKS => {
-                Err(Error::new(ErrorKind::Unsupported, "Unsupported protocol"))
+                return Err(Error::new(ErrorKind::Unsupported, "Unsupported protocol"))
             }
+            SupportedProtocols::DIRECT => StandardStream::new(stream),
         };
+
+        let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream.into_inner());
+        let (mut server_reader, mut server_writer) = tokio::io::split(outbound_stream.into_inner());
+
+        tokio::select!(
+            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+            _ = tokio::io::copy(&mut server_reader, &mut client_writer) => (),
+        );
+
+        info!("Connection finished");
+        Ok(())
     }
 }
