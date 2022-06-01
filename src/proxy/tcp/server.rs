@@ -8,18 +8,23 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 
 pub async fn start(inbound_config: InboundConfig, outbound_config: OutboundConfig) -> Result<()> {
+    // Extract the inbound client address
     let address = (inbound_config.address.clone(), inbound_config.port)
         .to_socket_addrs()
         .unwrap()
         .next()
         .unwrap();
 
+    // Start the TCP server listener socket
     let listener = TcpListener::bind(address).await?;
+
+    // Create TCP server acceptor and handler
     let (acceptor, handler) = (
         Arc::new(Acceptor::new(&inbound_config)),
         Arc::new(Handler::new(&outbound_config).unwrap()),
     );
 
+    // Enter server listener socket accept loop
     loop {
         let (socket, addr) = listener.accept().await?;
 

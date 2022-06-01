@@ -4,15 +4,15 @@ pub mod parser;
 use self::base::{ServerHello, VERSION};
 
 use crate::protocol::common::request::InboundRequest;
-use crate::protocol::common::stream::{StandardStream, StandardTcpStream};
+use crate::protocol::common::stream::StandardTcpStream;
 
 use std::io::Result;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-pub async fn accept<T: AsyncRead + AsyncWrite + Unpin>(
+pub async fn accept<T: AsyncRead + AsyncWrite + Unpin + Send>(
     mut stream: StandardTcpStream<T>,
     port: u16,
-) -> Result<(InboundRequest, StandardStream<StandardTcpStream<T>>)> {
+) -> Result<(InboundRequest, StandardTcpStream<T>)> {
     // Initialize the handshake process to establish socks connection
     init_ack(&mut stream).await?;
 
@@ -22,7 +22,7 @@ pub async fn accept<T: AsyncRead + AsyncWrite + Unpin>(
     // Write back the request port
     write_request_ack(&mut stream, port).await?;
 
-    Ok((request, StandardStream::new(stream)))
+    Ok((request, stream))
 }
 
 async fn init_ack<T: AsyncRead + AsyncWrite + Unpin>(stream: &mut T) -> Result<()> {

@@ -4,8 +4,6 @@ use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, BufReader, ReadBuf};
 
-use crate::protocol::common::stream::OutboundStream;
-
 pub struct DirectOutboundStream<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,

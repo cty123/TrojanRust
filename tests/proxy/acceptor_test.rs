@@ -27,7 +27,7 @@ async fn test_buffer() {
 
     server.write(&[2u8; 16]).await.unwrap();
 
-    client.read_buf(&mut buf).await.unwrap();
+    client.read_exact(&mut buf).await.unwrap();
 
     print!("{:?}", buf);
 }

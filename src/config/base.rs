@@ -1,7 +1,6 @@
 use crate::proxy::base::SupportedProtocols;
 
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -54,16 +53,4 @@ pub struct InboundTlsConfig {
 pub struct OutboundTlsConfig {
     pub host_name: String,
     pub allow_insecure: bool,
-}
-
-impl fmt::Display for InboundMode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-impl fmt::Display for OutboundMode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self)
-    }
 }

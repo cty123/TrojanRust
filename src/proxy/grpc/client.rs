@@ -7,7 +7,7 @@ use tonic::Streaming;
 
 const BUFFER_SIZE: usize = 4096;
 
-pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin>(
+pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin + Send>(
     mut client_writer: WriteHalf<StandardTcpStream<T>>,
     mut server_reader: Streaming<GrpcPacket>,
 ) -> io::Result<()> {
@@ -34,7 +34,7 @@ pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin>(
     }
 }
 
-pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin>(
+pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin + Send>(
     mut client_reader: ReadHalf<StandardTcpStream<T>>,
     server_writer: Sender<GrpcPacket>,
 ) -> io::Result<()> {

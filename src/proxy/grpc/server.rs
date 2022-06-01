@@ -42,7 +42,7 @@ pub async fn start(
     };
 }
 
-pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin>(
+pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin + Send>(
     mut client_reader: Streaming<GrpcPacket>,
     mut server_writer: WriteHalf<StandardTcpStream<T>>,
 ) -> io::Result<()> {
@@ -67,7 +67,7 @@ pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin>(
     }
 }
 
-pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin>(
+pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin + Send>(
     client_writer: Sender<Result<GrpcPacket, Status>>,
     mut server_reader: ReadHalf<StandardTcpStream<T>>,
 ) -> io::Result<()> {

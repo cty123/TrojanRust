@@ -1,7 +1,7 @@
 use crate::config::base::InboundConfig;
 use crate::config::tls::make_server_config;
 use crate::protocol::common::request::InboundRequest;
-use crate::protocol::common::stream::{StandardStream, StandardTcpStream};
+use crate::protocol::common::stream::StandardTcpStream;
 use crate::protocol::socks5;
 use crate::protocol::trojan;
 use crate::proxy::base::SupportedProtocols;
@@ -56,10 +56,10 @@ impl Acceptor {
 
     /// Takes an inbound TCP stream, escalate to TLS if possible and then escalate to application level data stream
     /// to be ready to read user's request and process them.
-    pub async fn accept<T: AsyncRead + AsyncWrite + Unpin>(
+    pub async fn accept<T: AsyncRead + AsyncWrite + Unpin + Send>(
         &self,
         inbound_stream: T,
-    ) -> Result<(InboundRequest, StandardStream<StandardTcpStream<T>>)> {
+    ) -> Result<(InboundRequest, StandardTcpStream<T>)> {
         match self.protocol {
             // Socks5 with or without TLS
             SupportedProtocols::SOCKS if self.tls_acceptor.is_some() => {

@@ -2,6 +2,8 @@ mod base;
 mod handler;
 mod parser;
 
+pub mod packet;
+
 pub use self::base::CRLF;
 pub use self::base::HEX_SIZE;
 pub use self::handler::{handle_client_data, handle_server_data};
@@ -9,7 +11,6 @@ pub use self::parser::parse;
 pub use self::parser::parse_udp;
 
 use crate::protocol::common::addr::IpAddress;
-use crate::protocol::common::stream::StandardStream;
 use crate::protocol::common::{request::InboundRequest, stream::StandardTcpStream};
 
 use std::io::{Error, ErrorKind, Result};
@@ -17,10 +18,10 @@ use std::net::IpAddr;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 /// Helper function to accept an abstract TCP stream to Trojan connection
-pub async fn accept<T: AsyncRead + AsyncWrite + Unpin>(
+pub async fn accept<T: AsyncRead + AsyncWrite + Unpin + Send>(
     mut stream: StandardTcpStream<T>,
     secret: &[u8],
-) -> Result<(InboundRequest, StandardStream<StandardTcpStream<T>>)> {
+) -> Result<(InboundRequest, StandardTcpStream<T>)> {
     // Read trojan request header and generate request header
     let request = parse(&mut stream).await?;
 
@@ -32,15 +33,15 @@ pub async fn accept<T: AsyncRead + AsyncWrite + Unpin>(
         ));
     }
 
-    Ok((request.inbound_request(), StandardStream::new(stream)))
+    Ok((request.inbound_request(), stream))
 }
 
 /// Helper function to establish Trojan connection to remote server
 pub async fn handshake<T: AsyncWrite + Unpin>(
     mut stream: T,
-    request: InboundRequest,
+    request: &InboundRequest,
     secret: &[u8],
-) -> Result<StandardStream<T>> {
+) -> Result<T> {
     // Write request header
     stream.write_all(secret).await?;
     stream.write_u16(CRLF).await?;
@@ -62,5 +63,5 @@ pub async fn handshake<T: AsyncWrite + Unpin>(
     stream.flush().await?;
 
     // Return the outbound stream itself
-    Ok(StandardStream::new(stream))
+    Ok(stream)
 }

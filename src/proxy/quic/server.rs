@@ -1,5 +1,4 @@
 use futures::StreamExt;
-use log::info;
 use quinn;
 use std::io::Result;
 use std::net::ToSocketAddrs;

@@ -4,16 +4,14 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[async_trait]
-pub trait IOStream: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
+pub trait PacketReader {
+    async fn read(&mut self) -> std::io::Result<Vec<u8>>;
+}
 
 #[async_trait]
-pub trait InboundStream: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
-
-#[async_trait]
-pub trait OutboundStream: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
-
-#[async_trait]
-pub trait PacketStream: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
+pub trait PacketWriter {
+    async fn write(&mut self, buf: &[u8]) -> std::io::Result<()>;
+}
 
 pub enum StandardTcpStream<T> {
     Plain(T),
@@ -21,7 +19,7 @@ pub enum StandardTcpStream<T> {
     RustlsClient(tokio_rustls::client::TlsStream<T>),
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for StandardTcpStream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for StandardTcpStream<S> {
     #[inline]
     fn poll_read(
         self: Pin<&mut Self>,
@@ -36,7 +34,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for StandardTcpStream<S> {
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for StandardTcpStream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for StandardTcpStream<S> {
     #[inline]
     fn poll_write(
         self: Pin<&mut Self>,
@@ -69,19 +67,5 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for StandardTcpStream<S> {
             StandardTcpStream::RustlsServer(ref mut s) => Pin::new(s).poll_shutdown(cx),
             StandardTcpStream::RustlsClient(ref mut s) => Pin::new(s).poll_shutdown(cx),
         }
-    }
-}
-
-pub struct StandardStream<T> {
-    stream: T,
-}
-
-impl<T> StandardStream<T> {
-    pub fn new(stream: T) -> Self {
-        Self { stream }
-    }
-
-    pub fn into_inner(self) -> T {
-        self.stream
     }
 }
