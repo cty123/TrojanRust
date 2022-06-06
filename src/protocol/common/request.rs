@@ -1,6 +1,6 @@
-use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
+use crate::{protocol::common::addr::IpAddress, proxy::base::SupportedProtocols};
 
 use serde::{Deserialize, Serialize};
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -17,6 +17,7 @@ pub struct InboundRequest {
     pub command: Command,
     pub port: u16,
     pub transport_protocol: TransportProtocol,
+    pub proxy_protocol: SupportedProtocols,
 }
 
 impl InboundRequest {
@@ -27,6 +28,7 @@ impl InboundRequest {
         command: Command,
         port: u16,
         transport_protocol: TransportProtocol,
+        proxy_protocol: SupportedProtocols,
     ) -> InboundRequest {
         InboundRequest {
             atype,
@@ -34,6 +36,7 @@ impl InboundRequest {
             command,
             port,
             transport_protocol,
+            proxy_protocol,
         }
     }
 

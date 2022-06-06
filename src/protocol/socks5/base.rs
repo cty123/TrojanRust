@@ -103,6 +103,7 @@ impl Request {
                 self.command,
                 self.port,
                 TransportProtocol::UDP,
+                crate::proxy::base::SupportedProtocols::SOCKS,
             ),
             _ => InboundRequest::new(
                 self.atype,
@@ -110,6 +111,7 @@ impl Request {
                 self.command,
                 self.port,
                 TransportProtocol::TCP,
+                crate::proxy::base::SupportedProtocols::SOCKS,
             ),
         };
     }

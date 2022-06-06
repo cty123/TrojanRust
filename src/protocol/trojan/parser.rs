@@ -47,7 +47,14 @@ pub async fn parse<T: AsyncRead + Unpin>(stream: &mut T) -> Result<Request> {
     // Read CLRF
     stream.read_u16().await?;
 
-    Ok(Request::new(hex, command, atype, addr, port))
+    Ok(Request::new(
+        hex,
+        command,
+        atype,
+        addr,
+        port,
+        crate::proxy::base::SupportedProtocols::TROJAN,
+    ))
 }
 
 pub async fn parse_udp<T: AsyncRead + Unpin>(reader: &mut T) -> Result<usize> {

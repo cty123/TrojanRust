@@ -1,12 +1,10 @@
 mod base;
-mod handler;
 mod parser;
 
 pub mod packet;
 
 pub use self::base::CRLF;
 pub use self::base::HEX_SIZE;
-pub use self::handler::{handle_client_data, handle_server_data};
 pub use self::parser::parse;
 pub use self::parser::parse_udp;
 
@@ -38,10 +36,10 @@ pub async fn accept<T: AsyncRead + AsyncWrite + Unpin + Send>(
 
 /// Helper function to establish Trojan connection to remote server
 pub async fn handshake<T: AsyncWrite + Unpin>(
-    mut stream: T,
+    stream: &mut T,
     request: &InboundRequest,
     secret: &[u8],
-) -> Result<T> {
+) -> Result<()> {
     // Write request header
     stream.write_all(secret).await?;
     stream.write_u16(CRLF).await?;
@@ -62,6 +60,5 @@ pub async fn handshake<T: AsyncWrite + Unpin>(
     stream.write_u16(CRLF).await?;
     stream.flush().await?;
 
-    // Return the outbound stream itself
-    Ok(stream)
+    Ok(())
 }

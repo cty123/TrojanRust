@@ -1,9 +1,14 @@
 {
     "inbound": {
         "mode": "TCP",
-        "protocol": "SOCKS",
+        "protocol": "TROJAN",
         "address": "0.0.0.0",
-        "port": 8081
+        "port": 8081,
+        "secret": "123123",
+        "tls": {
+            "cert_path": "/home/cty123/Projects/TrojanRust/config/cert.pem",
+            "key_path": "/home/cty123/Projects/TrojanRust/config/key.pem"
+        }
     },
     "outbound": {
         "mode": "DIRECT",

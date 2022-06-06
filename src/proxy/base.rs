@@ -4,5 +4,5 @@ use serde::{Deserialize, Serialize};
 pub enum SupportedProtocols {
     SOCKS,
     TROJAN,
-    DIRECT
+    DIRECT,
 }

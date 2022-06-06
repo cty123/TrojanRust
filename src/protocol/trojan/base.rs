@@ -4,6 +4,7 @@ use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
+use crate::proxy::base::SupportedProtocols;
 
 pub const HEX_SIZE: usize = 56;
 pub const CRLF: u16 = 0x0D0A;
@@ -14,6 +15,7 @@ pub struct Request {
     atype: Atype,
     addr: IpAddress,
     port: u16,
+    proxy_protocol: SupportedProtocols,
 }
 
 impl Request {
@@ -23,6 +25,7 @@ impl Request {
         atype: Atype,
         addr: IpAddress,
         port: u16,
+        proxy_protocol: SupportedProtocols,
     ) -> Request {
         return Request {
             hex,
@@ -30,6 +33,7 @@ impl Request {
             atype,
             addr,
             port,
+            proxy_protocol,
         };
     }
 
@@ -42,6 +46,7 @@ impl Request {
                 self.command,
                 self.port,
                 TransportProtocol::UDP,
+                self.proxy_protocol,
             ),
             _ => InboundRequest::new(
                 self.atype,
@@ -49,6 +54,7 @@ impl Request {
                 self.command,
                 self.port,
                 TransportProtocol::TCP,
+                self.proxy_protocol,
             ),
         };
     }
@@ -70,6 +76,7 @@ impl Request {
             atype: request.atype,
             addr: request.addr.clone(),
             port: request.port,
+            proxy_protocol: request.proxy_protocol,
         }
     }
 }

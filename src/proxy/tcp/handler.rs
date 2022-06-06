@@ -126,53 +126,68 @@ impl Handler {
         request: InboundRequest,
         inbound_stream: StandardTcpStream<T>,
     ) -> Result<()> {
-        match request.transport_protocol {
-            TransportProtocol::TCP => {
-                let addr = request.into_destination_address();
+        let addr = request.into_destination_address();
 
-                // Connect to remote server from the proxy request
-                let outbound_stream = match TcpStream::connect(addr).await {
-                    Ok(stream) => stream,
-                    Err(e) => {
-                        return Err(Error::new(
-                            ErrorKind::ConnectionRefused,
-                            format!("failed to connect to tcp {}: {}", addr, e),
-                        ))
+        match request.proxy_protocol {
+            SupportedProtocols::SOCKS => todo!(),
+            SupportedProtocols::TROJAN => {
+                match request.transport_protocol {
+                    TransportProtocol::TCP => {
+                        // Connect to remote server from the proxy request
+                        let outbound_stream = match TcpStream::connect(addr).await {
+                            Ok(stream) => stream,
+                            Err(e) => {
+                                return Err(Error::new(
+                                    ErrorKind::ConnectionRefused,
+                                    format!("failed to connect to tcp {}: {}", addr, e),
+                                ))
+                            }
+                        };
+
+                        // Setup the reader and writer for both the client and server so that we can transport the data
+                        let (mut client_reader, mut client_writer) =
+                            tokio::io::split(inbound_stream);
+                        let (mut server_reader, mut server_writer) =
+                            tokio::io::split(outbound_stream);
+
+                        tokio::select!(
+                            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+                            _ = tokio::io::copy(&mut server_reader, &mut client_writer) => (),
+                        );
+                    }
+                    TransportProtocol::UDP => {
+                        // Establish UDP connection to remote host
+                        let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
+                        match socket.connect(request.into_destination_address()).await {
+                            Ok(_) => (),
+                            Err(e) => {
+                                return Err(Error::new(
+                                    ErrorKind::ConnectionRefused,
+                                    format!("failed to connect to udp {}: {}", addr, e),
+                                ))
+                            }
+                        }
+
+                        // Setup the reader and writer for both the client and server so that we can transport the data
+                        let (server_reader, server_writer) = (socket.clone(), socket.clone());
+                        let (client_reader, client_writer) = tokio::io::split(inbound_stream);
+                        let (client_packet_reader, client_packet_writer) = (
+                            TrojanPacketReader::new(client_reader),
+                            TrojanPacketWriter::new(client_writer, request),
+                        );
+
+                        tokio::select!(
+                            _ = trojan::packet::packet_reader_to_udp_packet_writer(client_packet_reader, server_writer) => (),
+                            _ = trojan::packet::udp_packet_reader_to_packet_writer(server_reader, client_packet_writer) => ()
+                        );
                     }
                 };
-
-                // Setup the reader and writer for both the client and server so that we can transport the data
-                let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);
-                let (mut server_reader, mut server_writer) = tokio::io::split(outbound_stream);
-
-                tokio::select!(
-                    _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
-                    _ = tokio::io::copy(&mut server_reader, &mut client_writer) => (),
-                );
             }
-            TransportProtocol::UDP => {
-                let addr = request.into_destination_address();
-
-                // Establish UDP connection to remote host
-                let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
-                match socket.connect(request.into_destination_address()).await {
-                    Ok(_) => (),
-                    Err(e) => {
-                        return Err(Error::new(
-                            ErrorKind::ConnectionRefused,
-                            format!("failed to connect to udp {}: {}", addr, e),
-                        ))
-                    }
-                }
-
-                // Setup the reader and writer for both the client and server so that we can transport the data
-                let (client_reader, client_writer) = tokio::io::split(inbound_stream);
-                let (server_reader, server_writer) = (socket.clone(), socket.clone());
-
-                tokio::select!(
-                    _ = trojan::handle_client_data(client_reader, server_writer) => (),
-                    _ = trojan::handle_server_data(client_writer, server_reader, request) => ()
-                );
+            SupportedProtocols::DIRECT => {
+                return Err(Error::new(
+                    ErrorKind::Unsupported,
+                    "Proxy request can't have direct as proxy protocol",
+                ))
             }
         };
 
@@ -209,7 +224,7 @@ impl Handler {
         let (mut server_writer, mut server_reader) = conn.open_bi().await.unwrap();
         let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);
 
-        handshake(&mut server_writer, &request, &self.secret).await;
+        handshake(&mut server_writer, &request, &self.secret).await?;
 
         tokio::select!(
             _ = tokio::spawn(async move {tokio::io::copy(&mut client_reader, &mut server_writer).await}) => (),
@@ -300,7 +315,7 @@ impl Handler {
         };
 
         // Escalate the connection to TLS connection if tls config is present
-        let stream = match &self.tls {
+        let mut outbound_stream = match &self.tls {
             Some((client_config, domain)) => {
                 let connector = TlsConnector::from(client_config.clone());
                 StandardTcpStream::RustlsClient(
@@ -322,7 +337,7 @@ impl Handler {
                 }
 
                 // Start handshake to establish proxy stream
-                let outbound_stream = handshake(stream, &request, &self.secret).await?;
+                handshake(&mut outbound_stream, &request, &self.secret).await?;
 
                 // Obtain reader and writer for inbound and outbound streams
                 let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);

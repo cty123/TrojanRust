@@ -1,11 +1,12 @@
 use async_trait::async_trait;
+use bytes::BytesMut;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[async_trait]
 pub trait PacketReader {
-    async fn read(&mut self) -> std::io::Result<Vec<u8>>;
+    async fn read(&mut self) -> std::io::Result<BytesMut>;
 }
 
 #[async_trait]

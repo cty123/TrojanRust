@@ -1,7 +1,10 @@
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use bytes::BytesMut;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::UdpSocket;
 
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
@@ -33,7 +36,7 @@ impl<T: AsyncWrite + Unpin + Send> TrojanPacketWriter<T> {
 
 #[async_trait]
 impl<T: AsyncRead + Unpin + Send> PacketReader for TrojanPacketReader<T> {
-    async fn read(&mut self) -> std::io::Result<Vec<u8>> {
+    async fn read(&mut self) -> std::io::Result<BytesMut> {
         // Read address type
         let atype = self.inner.read_u8().await?;
 
@@ -61,7 +64,7 @@ impl<T: AsyncRead + Unpin + Send> PacketReader for TrojanPacketReader<T> {
         self.inner.read_u16().await?;
 
         // Read data into the buffer
-        let mut buf = vec![0u8; length as usize];
+        let mut buf = BytesMut::with_capacity(length as usize);
         self.inner.read_exact(&mut buf).await?;
 
         Ok(buf)
@@ -102,18 +105,41 @@ pub async fn packet_reader_to_stream_writer<R: AsyncRead + Unpin + Send, W: Asyn
     mut reader: TrojanPacketReader<R>,
     mut writer: W,
 ) -> std::io::Result<()> {
-    let buf = reader.read().await?;
-    writer.write_all(&buf).await?;
-    writer.flush().await?;
-    Ok(())
+    loop {
+        let buf = reader.read().await?;
+        writer.write_all(&buf).await?;
+        writer.flush().await?;
+    }
 }
 
 pub async fn stream_reader_to_packet_writer<R: AsyncRead + Unpin, W: AsyncWrite + Unpin + Send>(
     mut reader: R,
     mut writer: TrojanPacketWriter<W>,
 ) -> std::io::Result<()> {
-    let mut buf = Vec::with_capacity(4096);
-    reader.read_buf(&mut buf).await?;
-    writer.write(&buf).await?;
-    Ok(())
+    loop {
+        let mut buf = Vec::with_capacity(4096);
+        reader.read_buf(&mut buf).await?;
+        writer.write(&buf).await?;
+    }
+}
+
+pub async fn packet_reader_to_udp_packet_writer<R: AsyncRead + Unpin + Send>(
+    mut reader: TrojanPacketReader<R>,
+    writer: Arc<UdpSocket>,
+) -> std::io::Result<()> {
+    loop {
+        let data = reader.read().await?;
+        writer.send(&data).await?;
+    }
+}
+
+pub async fn udp_packet_reader_to_packet_writer<W: AsyncWrite + Unpin + Send>(
+    reader: Arc<UdpSocket>,
+    mut writer: TrojanPacketWriter<W>,
+) -> std::io::Result<()> {
+    loop {
+        let mut buf = Vec::with_capacity(4096);
+        reader.recv_from(&mut buf).await?;
+        writer.write(&buf).await?;
+    }
 }
