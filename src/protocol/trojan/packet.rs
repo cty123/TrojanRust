@@ -2,7 +2,6 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::BytesMut;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
 
@@ -36,7 +35,7 @@ impl<T: AsyncWrite + Unpin + Send> TrojanPacketWriter<T> {
 
 #[async_trait]
 impl<T: AsyncRead + Unpin + Send> PacketReader for TrojanPacketReader<T> {
-    async fn read(&mut self) -> std::io::Result<BytesMut> {
+    async fn read(&mut self) -> std::io::Result<Vec<u8>> {
         // Read address type
         let atype = self.inner.read_u8().await?;
 
@@ -64,7 +63,7 @@ impl<T: AsyncRead + Unpin + Send> PacketReader for TrojanPacketReader<T> {
         self.inner.read_u16().await?;
 
         // Read data into the buffer
-        let mut buf = BytesMut::with_capacity(length as usize);
+        let mut buf = Vec::with_capacity(length as usize);
         self.inner.read_exact(&mut buf).await?;
 
         Ok(buf)
@@ -138,8 +137,8 @@ pub async fn udp_packet_reader_to_packet_writer<W: AsyncWrite + Unpin + Send>(
     mut writer: TrojanPacketWriter<W>,
 ) -> std::io::Result<()> {
     loop {
-        let mut buf = Vec::with_capacity(4096);
-        reader.recv_from(&mut buf).await?;
+        let mut buf = vec![0u8; 4096];
+        reader.recv(&mut buf).await?;
         writer.write(&buf).await?;
     }
 }

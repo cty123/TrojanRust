@@ -158,7 +158,7 @@ impl Handler {
                     TransportProtocol::UDP => {
                         // Establish UDP connection to remote host
                         let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
-                        match socket.connect(request.into_destination_address()).await {
+                        match socket.connect(addr).await {
                             Ok(_) => (),
                             Err(e) => {
                                 return Err(Error::new(
@@ -202,7 +202,7 @@ impl Handler {
         inbound_stream: StandardTcpStream<T>,
     ) -> Result<()> {
         // Dial remote proxy server
-        let roots = rustls::RootCertStore::empty();
+        let _roots = rustls::RootCertStore::empty();
         let client_crypto = rustls::ClientConfig::builder()
             .with_safe_defaults()
             .with_custom_certificate_verifier(Arc::new(NoCertificateVerification {}))
@@ -211,7 +211,7 @@ impl Handler {
         endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(client_crypto)));
 
         // Establish connection with remote proxy server using QUIC protocol
-        let mut connection = endpoint
+        let connection = endpoint
             .connect("127.0.0.1:8081".parse().unwrap(), "example.com")
             .unwrap()
             .await
