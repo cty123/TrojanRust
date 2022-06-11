@@ -6,6 +6,32 @@ on:
       - '*'
 
 jobs:
+  build-windows:
+    name: Build for Windows x86_64
+    runs-on: windows-latest
+    steps:
+        - name: Checkout
+          uses: actions/checkout@v2
+        
+        - name: Visual Studio shell
+          uses: egor-tensin/vs-shell@v2
+          
+        - name: Rust Toolchain
+          uses: actions-rs/toolchain@v1
+          with:
+            profile: minimal
+            toolchain: stable
+        
+        - name: Build
+          run: cargo build --release --locked
+
+        - name: Upload
+          uses: actions/upload-artifact@v2
+          with:
+            name: trojan_rust_win_x86_64
+            path: target/release/trojan-rust
+    
+
   build:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
