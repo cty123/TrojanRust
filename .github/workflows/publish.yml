@@ -34,7 +34,7 @@ jobs:
           uses: actions/upload-artifact@v2
           with:
             name: trojan_rust_win_x86_64
-            path: target/release/trojan-rust
+            path: target/release/trojan-rust.exe
     
   build:
     name: Build for ${{ matrix.os }}
@@ -100,7 +100,7 @@ jobs:
       
       - name: Rename
         run: |
-          ls
+          ls ~/
         
       - name: Release
         uses: softprops/action-gh-release@v0.1.7
