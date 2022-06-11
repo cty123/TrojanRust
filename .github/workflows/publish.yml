@@ -78,7 +78,7 @@ jobs:
   
   publish:
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [build, build-windows]
     steps:
       - name: Download Windows Artifact
         uses: actions/download-artifact@v2
