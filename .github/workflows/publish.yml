@@ -84,28 +84,35 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: trojan_rust_win_x86_64
-          path: ~/
+          path: ~/windows/
       
       - name: Download Ubuntu Artifact
         uses: actions/download-artifact@v2
         with:
           name: trojan-rust-linux
-          path: ~/
+          path: ~/linux/
           
       - name: Download MacOS Artifact
         uses: actions/download-artifact@v2
         with:
           name: trojan-rust-macos
-          path: ~/
+          path: ~/macos/
       
       - name: Rename
         run: |
-          ls ~/
+          ls
+          ls ~/linux/
+          ls ~/macos/
+          ls ~/windows/
+          
+          mv ~/macos/trojan-rust ./trojan_rust_macos_x86_64
+          mv ~/linux/trojan-rust ./trojan_rust_linux_x86_64
+          mv ~/windows/trojan-rust.exe ./trojan_rust_win_x86_64.exe
         
       - name: Release
         uses: softprops/action-gh-release@v0.1.7
         with: 
           files: |
             trojan_rust_win_x86_64.exe
-            trojan-rust-linux
-            trojan-rust-macos
+            trojan_rust_linux_x86_64
+            trojan_rust_macos_x86_64
