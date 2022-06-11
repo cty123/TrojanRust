@@ -1,7 +1,7 @@
 use clap::Arg;
 use clap::{ArgMatches, Command};
 use lazy_static::lazy_static;
-use log::info;
+use log::{error, info};
 use std::io::Result;
 use trojan_rust::config::base::InboundMode;
 use trojan_rust::config::parser::reader_config;
@@ -34,7 +34,13 @@ async fn main() -> Result<()> {
     info!("Reading trojan configuration file from {}", config_path);
 
     // Error out immediately if failing to parse config file
-    let config = reader_config(config_path).unwrap();
+    let config = match reader_config(config_path) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            error!("Error parsing the config file, got error: {}", e);
+            return Err(e);
+        }
+    };
 
     // Extract inbound and outbound configuration
     let (inbound_config, outbound_config) = (config.inbound, config.outbound);
