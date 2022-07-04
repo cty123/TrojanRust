@@ -1,10 +1,10 @@
 use clap::Arg;
 use clap::{ArgMatches, Command};
 use lazy_static::lazy_static;
-use log::{error, info};
+use log::info;
 use std::io::Result;
-use trojan_rust::config::base::InboundMode;
-use trojan_rust::config::parser::reader_config;
+use trojan_rust::config::base::{InboundConfig, InboundMode, OutboundConfig};
+use trojan_rust::config::parser::read_config;
 use trojan_rust::proxy::grpc;
 use trojan_rust::proxy::quic;
 use trojan_rust::proxy::tcp;
@@ -23,43 +23,38 @@ lazy_static! {
                 .takes_value(true),
         )
         .get_matches();
+    static ref CONFIG_PATH: &'static str =
+        ARGS.value_of("config").unwrap_or("./config/config.json");
+    static ref CONFIG: (InboundConfig, OutboundConfig) = {
+        let config = read_config(&CONFIG_PATH).expect("Error parsing the config file");
+        (config.inbound, config.outbound)
+    };
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
-    // Read configuration file from arguments
-    let config_path = ARGS.value_of("config").unwrap_or("./config/config.json");
-    info!("Reading trojan configuration file from {}", config_path);
+    info!(
+        "Reading trojan configuration file from {}",
+        CONFIG_PATH.to_string()
+    );
 
-    // Error out immediately if failing to parse config file
-    let config = match reader_config(config_path) {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            error!("Error parsing the config file, got error: {}", e);
-            return Err(e);
-        }
-    };
-
-    // Extract inbound and outbound configuration
-    let (inbound_config, outbound_config) = (config.inbound, config.outbound);
+    info!(
+        "Starting {} server to accept inbound traffic",
+        CONFIG.0.mode
+    );
 
     // TODO: Support more types of server, like UDP
-    // info!(
-    //     "Starting {} server to accept inbound traffic",
-    //     inbound_config.mode
-    // );
-
-    match inbound_config.mode {
+    match CONFIG.0.mode {
         InboundMode::TCP => {
-            tcp::server::start(inbound_config, outbound_config).await?;
+            tcp::server::start(&CONFIG.0, &CONFIG.1).await?;
         }
         InboundMode::GRPC => {
-            grpc::server::start(inbound_config, outbound_config).await?;
+            grpc::server::start(&CONFIG.0, &CONFIG.1).await?;
         }
         InboundMode::QUIC => {
-            quic::server::start(inbound_config, outbound_config).await?;
+            quic::server::start(&CONFIG.0, &CONFIG.1).await?;
         }
     }
 

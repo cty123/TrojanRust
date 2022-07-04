@@ -10,7 +10,10 @@ use crate::{
     protocol::trojan::parse,
 };
 
-pub async fn start(inbound_config: InboundConfig, _outboud_config: OutboundConfig) -> Result<()> {
+pub async fn start(
+    inbound_config: &'static InboundConfig,
+    _outboud_config: &'static OutboundConfig,
+) -> Result<()> {
     let address = (inbound_config.address.clone(), inbound_config.port)
         .to_socket_addrs()
         .unwrap()
@@ -19,7 +22,7 @@ pub async fn start(inbound_config: InboundConfig, _outboud_config: OutboundConfi
 
     // Build config for accepting QUIC connection
     // TODO: Avoid using unwrap
-    let server_crypto = make_server_config(&inbound_config.tls.unwrap()).unwrap();
+    let server_crypto = make_server_config(&inbound_config.tls.clone().unwrap()).unwrap();
 
     let config = quinn::ServerConfig::with_crypto(server_crypto);
 

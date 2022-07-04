@@ -13,8 +13,8 @@ use tonic::{Status, Streaming};
 const BUFFER_SIZE: usize = 4096;
 
 pub async fn start(
-    inbound_config: InboundConfig,
-    _outbound_config: OutboundConfig,
+    inbound_config: &'static InboundConfig,
+    _outbound_config: &'static OutboundConfig,
 ) -> io::Result<()> {
     // Extract the address that the server should listen on
     let address = match (inbound_config.address.as_ref(), inbound_config.port)

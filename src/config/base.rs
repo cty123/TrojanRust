@@ -1,6 +1,7 @@
 use crate::proxy::base::SupportedProtocols;
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -8,11 +9,17 @@ pub struct Config {
     pub outbound: OutboundConfig,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum InboundMode {
     TCP,
     GRPC,
     QUIC,
+}
+
+impl fmt::Display for InboundMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]

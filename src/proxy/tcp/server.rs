@@ -7,7 +7,10 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-pub async fn start(inbound_config: InboundConfig, outbound_config: OutboundConfig) -> Result<()> {
+pub async fn start(
+    inbound_config: &'static InboundConfig,
+    outbound_config: &'static OutboundConfig,
+) -> Result<()> {
     // Extract the inbound client address
     let address = (inbound_config.address.clone(), inbound_config.port)
         .to_socket_addrs()
