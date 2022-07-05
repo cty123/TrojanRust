@@ -15,6 +15,7 @@ use crate::transport::grpc::proxy_service_client::ProxyServiceClient;
 use crate::transport::grpc::{GrpcPacket, TrojanRequest};
 
 use log::info;
+use once_cell::sync::OnceCell;
 use rustls::{ClientConfig, ServerName};
 use sha2::{Digest, Sha224};
 use std::io::{Error, ErrorKind, Result};
@@ -25,10 +26,12 @@ use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc;
 use tokio_rustls::TlsConnector;
 
+static TCP_HANDLER: OnceCell<TcpHandler> = OnceCell::new();
+
 /// Handler is responsible for taking user's request and process them and send back the result.
 /// It may need to dial to remote using TCP, UDP and TLS, in which it will be responsible for
 /// establishing a tranport level connection and escalate it to application data stream.
-pub struct Handler {
+pub struct TcpHandler {
     mode: OutboundMode,
     protocol: SupportedProtocols,
     destination: Option<SocketAddr>,
@@ -36,25 +39,20 @@ pub struct Handler {
     secret: Vec<u8>,
 }
 
-impl Handler {
+impl TcpHandler {
     /// Instantiate a new Handler instance based on OutboundConfig passed by the user. It will evaluate the
     /// TLS option particularly to be able to later determine whether it should escalate the connection to
     /// TLS first or not.
-    pub fn new(outbound: &OutboundConfig) -> Result<Handler> {
+    pub fn init(outbound: &OutboundConfig) -> &'static TcpHandler {
         // Get outbound TLS configuration and host dns name if TLS is enabled
         let tls = match &outbound.tls {
             Some(cfg) => {
                 let client_config = make_client_config(&cfg);
-                let domain = match ServerName::try_from(cfg.host_name.as_ref()) {
-                    Ok(domain) => domain,
-                    Err(_) => {
-                        return Err(Error::new(
-                            ErrorKind::InvalidInput,
-                            "Failed to parse host name",
-                        ))
-                    }
-                };
-                Some((client_config, domain))
+                Some((
+                    client_config,
+                    ServerName::try_from(cfg.host_name.as_ref())
+                        .expect("Failed to parse host name"),
+                ))
             }
             None => None,
         };
@@ -63,16 +61,10 @@ impl Handler {
         let destination = match (outbound.address.clone(), outbound.port) {
             (Some(addr), Some(port)) => Some(format!("{}:{}", addr, port).parse().unwrap()),
             (Some(_), None) => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    "Missing port while address is present",
-                ))
+                panic!("Missing port while address is present")
             }
             (None, Some(_)) => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    "Missing address while port is present",
-                ))
+                panic!("Missing address while address is present")
             }
             // No destination address and port specified, will use the address and port in each request
             (None, None) => None,
@@ -93,7 +85,7 @@ impl Handler {
             _ => Vec::new(),
         };
 
-        Ok(Handler {
+        TCP_HANDLER.get_or_init(|| Self {
             mode: outbound.mode.clone(),
             protocol: outbound.protocol,
             destination,

@@ -1,14 +1,13 @@
-use futures::StreamExt;
-use quinn;
-use std::io::Result;
-use std::net::ToSocketAddrs;
-use tokio::net::TcpStream;
-
 use crate::{
     config::base::InboundConfig,
     config::{base::OutboundConfig, tls::make_server_config},
     protocol::trojan::parse,
 };
+use futures::StreamExt;
+use quinn;
+use std::io::Result;
+use std::net::ToSocketAddrs;
+use tokio::net::TcpStream;
 
 pub async fn start(
     inbound_config: &'static InboundConfig,
@@ -38,7 +37,10 @@ pub async fn start(
                 connection,
                 mut bi_streams,
                 ..
-            } = conn.await.unwrap();
+            } = match conn.await {
+                Ok(c) => c,
+                Err(_) => return,
+            };
 
             // Extract reader stream and writer stream from the established connection
             let (mut client_writer, mut client_reader) = match bi_streams.next().await {
@@ -47,7 +49,6 @@ pub async fn start(
             };
 
             // Read proxy request from the client stream
-            // TODO: Support other proxy protocols
             let request = parse(&mut client_reader).await.unwrap().inbound_request();
 
             // Connect to remote server

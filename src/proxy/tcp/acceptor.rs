@@ -5,26 +5,28 @@ use crate::protocol::common::stream::StandardTcpStream;
 use crate::protocol::socks5;
 use crate::protocol::trojan;
 use crate::proxy::base::SupportedProtocols;
-
+use once_cell::sync::OnceCell;
 use sha2::{Digest, Sha224};
 use std::io::{Error, ErrorKind, Result};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsAcceptor;
 
+static TCP_ACCEPTOR: OnceCell<TcpAcceptor> = OnceCell::new();
+
 /// Acceptor handles incomming connection by escalating them to application level data stream based on
 /// the configuration. It is also responsible for escalating TCP connection to TLS connection if the user
 /// enabled TLS.
-pub struct Acceptor {
+pub struct TcpAcceptor {
     tls_acceptor: Option<TlsAcceptor>,
     port: u16,
     protocol: SupportedProtocols,
     secret: Vec<u8>,
 }
 
-impl Acceptor {
+impl TcpAcceptor {
     /// Instantiate a new acceptor based on InboundConfig passed by the user. It will generate the secret based on
     /// secret in the config file and the selected protocol and instantiate TLS acceptor is it is enabled.
-    pub fn new(inbound: &InboundConfig) -> Acceptor {
+    pub fn init(inbound: &InboundConfig) -> &'static Self {
         let secret = match inbound.protocol {
             SupportedProtocols::TROJAN if inbound.secret.is_some() => {
                 let secret = inbound.secret.as_ref().unwrap();
@@ -46,17 +48,17 @@ impl Acceptor {
             None => None,
         };
 
-        Acceptor {
+        TCP_ACCEPTOR.get_or_init(|| Self {
             tls_acceptor,
             port: inbound.port,
             protocol: inbound.protocol,
             secret,
-        }
+        })
     }
 
     /// Takes an inbound TCP stream, escalate to TLS if possible and then escalate to application level data stream
     /// to be ready to read user's request and process them.
-    pub async fn accept<T: AsyncRead + AsyncWrite + Unpin + Send>(
+    pub async fn accept<T: AsyncRead + AsyncWrite + Send + Unpin>(
         &self,
         inbound_stream: T,
     ) -> Result<(InboundRequest, StandardTcpStream<T>)> {
