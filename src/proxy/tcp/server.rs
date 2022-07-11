@@ -32,7 +32,7 @@ pub async fn start(
 
         info!("Received new connection from {}", addr);
 
-        let (acceptor, handler) = (acceptor.clone(), handler.clone());
+        let (acceptor, handler) = (acceptor, handler);
 
         tokio::spawn(async move {
             let (request, inbound_stream) = match acceptor.accept(socket).await {
