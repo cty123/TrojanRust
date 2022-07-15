@@ -25,3 +25,16 @@ message GrpcPacket {
   optional TrojanRequest trojan = 2;
   optional bytes datagram = 3;
 }
+
+service GRPCService {
+  rpc Tun (stream Hunk) returns (stream Hunk);
+  rpc TunMulti (stream MultiHunk) returns (stream MultiHunk);
+}
+
+message Hunk {
+  bytes data = 1;
+}
+
+message MultiHunk {
+  repeated bytes data = 1;
+}

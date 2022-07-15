@@ -1,13 +1,15 @@
 use crate::config::base::{InboundConfig, OutboundConfig};
 use crate::protocol::common::stream::StandardTcpStream;
-use crate::transport::grpc::proxy_service_server::ProxyServiceServer;
+use crate::transport::grpc::grpc_service_server::GrpcServiceServer;
 use crate::transport::grpc::GrpcPacket;
-use crate::transport::grpc::GrpcService;
+use crate::transport::grpc::GrpcProxyService;
+
+use log::info;
 use std::io::{self, Error, ErrorKind};
 use std::net::ToSocketAddrs;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::mpsc::Sender;
-use tonic::transport::Server;
+use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Status, Streaming};
 
 const BUFFER_SIZE: usize = 4096;
@@ -31,9 +33,22 @@ pub async fn start(
         }
     };
 
+    let tls_config = match &inbound_config.tls {
+        Some(cfg) => {
+            let cert = tokio::fs::read(cfg.cert_path.clone()).await?;
+            let key = tokio::fs::read(cfg.key_path.clone()).await?;
+            Some(ServerTlsConfig::new().identity(Identity::from_pem(cert, key)))
+        }
+        None => None,
+    };
+
+    info!("GRPC server listening on {}", address);
+
     // Initialize and start the GRPC server to serve GRPC requests
     return match Server::builder()
-        .add_service(ProxyServiceServer::new(GrpcService::new()))
+        .tls_config(tls_config.unwrap())
+        .unwrap()
+        .add_service(GrpcServiceServer::new(GrpcProxyService::new()))
         .serve(address)
         .await
     {
