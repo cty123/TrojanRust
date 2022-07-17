@@ -2,30 +2,6 @@ syntax = "proto3";
 
 package trojan_rust.transport.grpc;
 
-service ProxyService {
-  rpc Proxy(stream GrpcPacket) returns (stream GrpcPacket);
-}
-
-message Datagram { bytes payload = 1; }
-
-message TrojanRequest {
-  bytes hex = 1;
-  uint32 atype = 2;
-  uint32 command = 3;
-  string address = 4;
-  uint32 port = 5;
-}
-
-message GrpcPacket {
-  enum Type {
-    Request = 0;
-    Data = 1;
-  }
-  Type packet_type = 1;
-  optional TrojanRequest trojan = 2;
-  optional bytes datagram = 3;
-}
-
 service GRPCService {
   rpc Tun (stream Hunk) returns (stream Hunk);
   rpc TunMulti (stream MultiHunk) returns (stream MultiHunk);

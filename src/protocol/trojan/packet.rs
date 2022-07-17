@@ -2,6 +2,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use log::info;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
 
@@ -64,7 +65,7 @@ impl<T: AsyncRead + Unpin + Send> PacketReader for TrojanPacketReader<T> {
 
         // Read data into the buffer
         let mut buf = Vec::with_capacity(length as usize);
-        self.inner.read_exact(&mut buf).await?;
+        self.inner.read_buf(&mut buf).await?;
 
         Ok(buf)
     }

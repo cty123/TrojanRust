@@ -1,19 +1,25 @@
 use crate::config::base::{InboundConfig, OutboundConfig};
-use crate::protocol::common::stream::StandardTcpStream;
-use crate::transport::grpc::grpc_service_server::GrpcServiceServer;
-use crate::transport::grpc::GrpcPacket;
-use crate::transport::grpc::GrpcProxyService;
+use crate::transport::grpc_transport::grpc_service_server::GrpcService;
+use crate::transport::grpc_transport::grpc_service_server::GrpcServiceServer;
+use crate::transport::grpc_transport::{Hunk, MultiHunk};
 
+use futures::Stream;
 use log::info;
 use std::io::{self, Error, ErrorKind};
 use std::net::ToSocketAddrs;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::sync::mpsc::Sender;
+use std::pin::Pin;
+use tokio::sync::mpsc;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
-use tonic::{Status, Streaming};
+use tonic::{Request, Response, Status, Streaming};
 
+use super::acceptor::GrpcAcceptor;
+use super::handler::GrpcHandler;
+
+// TODO: Need more discretion in detemining the value for channel size, or make it configurable
+const CHANNEL_SIZE: usize = 16;
 const BUFFER_SIZE: usize = 4096;
 
+/// Start running the GRPC server
 pub async fn start(
     inbound_config: &'static InboundConfig,
     _outbound_config: &'static OutboundConfig,
@@ -42,75 +48,91 @@ pub async fn start(
         None => None,
     };
 
-    info!("GRPC server listening on {}", address);
-
     // Initialize and start the GRPC server to serve GRPC requests
-    return match Server::builder()
-        .tls_config(tls_config.unwrap())
-        .unwrap()
-        .add_service(GrpcServiceServer::new(GrpcProxyService::new()))
+    let mut server = match tls_config {
+        Some(cfg) => Server::builder()
+            .tls_config(cfg)
+            .expect("Failed to build GRPC server"),
+        None => Server::builder(),
+    };
+
+    return match server
+        .add_service(GrpcServiceServer::new(GrpcProxyService::new(
+            GrpcAcceptor::new(&inbound_config),
+            GrpcHandler::new(),
+        )))
         .serve(address)
         .await
     {
         Ok(_) => Ok(()),
-        Err(e) => Err(Error::new(ErrorKind::AddrInUse, e)),
+        Err(_) => Err(Error::new(
+            ErrorKind::Interrupted,
+            "Failed to start grpc server",
+        )),
     };
 }
 
-pub async fn handle_server_data<T: AsyncRead + AsyncWrite + Unpin + Send>(
-    mut client_reader: Streaming<GrpcPacket>,
-    mut server_writer: WriteHalf<StandardTcpStream<T>>,
-) -> io::Result<()> {
-    loop {
-        let data = match client_reader.message().await {
-            Ok(res) => match res {
-                Some(packet) => packet,
-                None => continue,
-            },
-            Err(_) => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionReset,
-                    "failed to read incoming GRPC message",
-                ));
-            }
-        };
+pub struct GrpcProxyService {
+    acceptor: &'static GrpcAcceptor,
+    handler: &'static GrpcHandler,
+}
 
-        match data.datagram {
-            Some(vec) => server_writer.write_all(&vec).await?,
-            None => continue,
-        }
+impl GrpcProxyService {
+    pub fn new(acceptor: &'static GrpcAcceptor, handler: &'static GrpcHandler) -> Self {
+        Self { acceptor, handler }
     }
 }
 
-pub async fn handle_client_data<T: AsyncRead + AsyncWrite + Unpin + Send>(
-    client_writer: Sender<Result<GrpcPacket, Status>>,
-    mut server_reader: ReadHalf<StandardTcpStream<T>>,
-) -> io::Result<()> {
-    loop {
-        let mut buf = Vec::with_capacity(BUFFER_SIZE);
-        let n = server_reader.read_buf(&mut buf).await?;
+#[tonic::async_trait]
+impl GrpcService for GrpcProxyService {
+    type TunStream = Pin<Box<dyn Stream<Item = Result<Hunk, Status>> + Send>>;
+    type TunMultiStream = Pin<Box<dyn Stream<Item = Result<MultiHunk, Status>> + Send>>;
 
-        if n == 0 {
-            return Ok(());
-        }
+    async fn tun(
+        &self,
+        request: Request<Streaming<Hunk>>,
+    ) -> Result<Response<Self::TunStream>, Status> {
+        info!("Received GRPC request");
+        let (acceptor, handler) = (self.acceptor, self.handler);
+        let (tx, rx) = mpsc::channel(16);
 
-        buf.truncate(n);
+        tokio::spawn(async move {
+            let (request, client_reader) = match acceptor.accept_hunk(request).await {
+                Ok((req, reader)) => (req, reader),
+                Err(_) => {
+                    return Err(Error::new(
+                        ErrorKind::ConnectionAborted,
+                        "Failed to accept the inbound traffic",
+                    ))
+                }
+            };
 
-        match client_writer
-            .send(Ok(GrpcPacket {
-                packet_type: 0,
-                trojan: None,
-                datagram: Some(buf),
-            }))
-            .await
-        {
-            Ok(_) => continue,
-            Err(_) => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionRefused,
-                    "failed to write to back GRPC",
-                ))
-            }
-        }
+            return match handler.handle_hunk(client_reader, tx, request).await {
+                Ok(_) => Ok(()),
+                Err(_) => Err(Error::new(
+                    ErrorKind::ConnectionReset,
+                    "Failed to handle inbound traffic",
+                )),
+            };
+        });
+
+        Ok(Response::new(Box::pin(
+            tokio_stream::wrappers::ReceiverStream::new(rx),
+        )))
+    }
+
+    async fn tun_multi(
+        &self,
+        request: tonic::Request<Streaming<MultiHunk>>,
+    ) -> Result<Response<Self::TunMultiStream>, Status> {
+        let mut client_reader = request.into_inner();
+
+        // client_reader.into_async_read();
+
+        let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
+
+        Ok(Response::new(Box::pin(
+            tokio_stream::wrappers::ReceiverStream::new(rx),
+        )))
     }
 }

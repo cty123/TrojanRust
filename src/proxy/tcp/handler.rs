@@ -10,9 +10,6 @@ use crate::protocol::trojan::packet::{
 };
 use crate::protocol::trojan::HEX_SIZE;
 use crate::proxy::base::SupportedProtocols;
-use crate::proxy::grpc::client::{handle_client_data, handle_server_data};
-use crate::transport::grpc::proxy_service_client::ProxyServiceClient;
-use crate::transport::grpc::{GrpcPacket, TrojanRequest};
 
 use log::info;
 use once_cell::sync::OnceCell;
@@ -23,9 +20,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpStream, UdpSocket};
-use tokio::sync::mpsc;
 use tokio_rustls::TlsConnector;
 
+/// Static life time TCP server outbound traffic handler to avoid ARC
+/// The handler is initialized through init() function
 static TCP_HANDLER: OnceCell<TcpHandler> = OnceCell::new();
 
 /// Handler is responsible for taking user's request and process them and send back the result.
@@ -105,8 +103,13 @@ impl TcpHandler {
         match self.mode {
             OutboundMode::DIRECT => self.handle_direct_stream(request, inbound_stream).await?,
             OutboundMode::TCP => self.handle_tcp_stream(request, inbound_stream).await?,
-            OutboundMode::GRPC => self.handle_grpc_stream(request, inbound_stream).await?,
             OutboundMode::QUIC => self.handle_quic_stream(request, inbound_stream).await?,
+            OutboundMode::GRPC => {
+                return Err(Error::new(
+                    ErrorKind::Unsupported,
+                    "GRPC transport outbound is not yet supported",
+                ))
+            }
         }
 
         Ok(())
@@ -223,70 +226,6 @@ impl TcpHandler {
             _ = tokio::spawn(async move {tokio::io::copy(&mut server_reader, &mut client_writer).await}) => (),
         );
 
-        Ok(())
-    }
-
-    async fn handle_grpc_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
-        &self,
-        request: InboundRequest,
-        inbound_stream: StandardTcpStream<T>,
-    ) -> Result<()> {
-        let endpoint = match self.tls {
-            None => format!("http://{}", self.destination.unwrap()),
-            Some(_) => format!("https://{}", self.destination.unwrap()),
-        };
-
-        let mut server = match ProxyServiceClient::connect(endpoint).await {
-            Ok(server) => server,
-            Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionRefused,
-                    format!("failed to connect to remote server: {}", e),
-                ))
-            }
-        };
-
-        let (tx, rx) = mpsc::channel(64);
-
-        match tx
-            .send(GrpcPacket {
-                packet_type: 1,
-                trojan: Some(TrojanRequest {
-                    hex: self.secret.clone(),
-                    atype: request.atype.to_byte() as u32,
-                    command: request.command.to_byte() as u32,
-                    address: request.addr.to_string(),
-                    port: request.port as u32,
-                }),
-                datagram: None,
-            })
-            .await
-        {
-            Ok(_) => (),
-            Err(_) => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionRefused,
-                    "failed to write request data",
-                ))
-            }
-        }
-
-        let server_reader = match server
-            .proxy(tokio_stream::wrappers::ReceiverStream::new(rx))
-            .await
-        {
-            Ok(response) => response.into_inner(),
-            Err(e) => return Err(Error::new(ErrorKind::Interrupted, e)),
-        };
-
-        let (client_reader, client_writer) = tokio::io::split(inbound_stream);
-
-        tokio::select!(
-            _ = tokio::spawn(handle_server_data(client_reader, tx)) => (),
-            _ = tokio::spawn(handle_client_data(client_writer, server_reader)) => ()
-        );
-
-        info!("Connection finished");
         Ok(())
     }
 

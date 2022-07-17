@@ -5,11 +5,23 @@ const ATYPE_IPV4: u8 = 1;
 const ATYPE_DOMAIN_NAME: u8 = 3;
 const ATYPE_IPV6: u8 = 4;
 
+#[repr(u8)]
 #[derive(Copy, Clone)]
 pub enum Atype {
-    IPv4,
-    IPv6,
-    DomainName,
+    IPv4 = 1,
+    IPv6 = 4,
+    DomainName = 3,
+}
+
+impl From<u8> for Atype {
+    fn from(atype: u8) -> Self {
+        match atype {
+            ATYPE_IPV4 => Atype::IPv4,
+            ATYPE_IPV6 => Atype::IPv6,
+            ATYPE_DOMAIN_NAME => Atype::DomainName,
+            _ => Atype::IPv4,
+        }
+    }
 }
 
 impl Atype {
