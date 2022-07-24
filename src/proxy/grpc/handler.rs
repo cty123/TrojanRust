@@ -1,23 +1,23 @@
-use bytes::BufMut;
-use log::info;
-use once_cell::sync::OnceCell;
-use std::io::{Error, ErrorKind};
-use std::net::IpAddr;
-use std::sync::Arc;
-use std::{io, net::SocketAddr};
-use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::net::{TcpStream, UdpSocket};
-use tokio::sync::mpsc::Sender;
-use tonic::Status;
-
 use crate::protocol::common::addr::IpAddress;
-use crate::protocol::trojan;
-use crate::protocol::trojan::packet::{TrojanPacketReader};
+use crate::protocol::trojan::packet::TrojanUdpPacketCodec;
+use crate::protocol::trojan::{self, CRLF};
 use crate::{
     protocol::common::request::InboundRequest,
     proxy::base::SupportedProtocols,
     transport::{grpc_stream::GrpcDataStream, grpc_transport::Hunk},
 };
+
+use bytes::BufMut;
+use once_cell::sync::OnceCell;
+use std::io::{self, Error, ErrorKind};
+use std::net::IpAddr;
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::mpsc::Sender;
+use tokio_util::codec::FramedRead;
+use tonic::Status;
+
+const BUFFER_SIZE: usize = 4096;
 
 /// Static life time TCP server outbound traffic handler to avoid ARC
 /// The handler is initialized through init() function
@@ -25,14 +25,12 @@ static GRPC_HANDLER: OnceCell<GrpcHandler> = OnceCell::new();
 
 /// GrpcHandler is responsible for handling outbound traffic for GRPC inbound streams
 pub struct GrpcHandler {
-    destination: Option<SocketAddr>,
     protocol: SupportedProtocols,
 }
 
 impl GrpcHandler {
     pub fn new() -> &'static GrpcHandler {
         GRPC_HANDLER.get_or_init(|| Self {
-            destination: None,
             protocol: SupportedProtocols::TROJAN,
         })
     }
@@ -43,59 +41,55 @@ impl GrpcHandler {
         client_writer: Sender<Result<Hunk, Status>>,
         request: InboundRequest,
     ) -> io::Result<()> {
-        return match request.command {
-            crate::protocol::common::command::Command::Connect => {
-                // Establish connection to remote server as specified by proxy request
-                let (mut server_reader, mut server_writer) =
-                    match TcpStream::connect((request.addr.to_string(), request.port as u16)).await
-                    {
-                        Ok(stream) => tokio::io::split(stream),
-                        Err(e) => {
-                            // error!("Failed to connect to {}:{}", address, port);
-                            return Err(e);
-                        }
-                    };
-
-                // Spawn two concurrent coroutines to transport the data between client and server
-                tokio::select!(
-                    _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
-                    _ = write_back_tcp_traffic(&mut server_reader, client_writer) => (),
-                );
-
-                Ok(())
-            }
-            crate::protocol::common::command::Command::Udp => {
-                // Establish UDP connection to remote host
-                let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
-                match socket
-                    .connect((request.addr.to_string(), request.port as u16))
-                    .await
-                {
-                    Ok(_) => (),
-                    Err(e) => {
-                        return Err(Error::new(
-                            ErrorKind::ConnectionRefused,
-                            format!("failed to connect to udp {}: {}", request.addr, e),
+        match self.protocol {
+            SupportedProtocols::TROJAN => {
+                return match request.command {
+                    crate::protocol::common::command::Command::Connect => {
+                        // Establish connection to remote server as specified by proxy request
+                        let (mut server_reader, mut server_writer) = match TcpStream::connect((
+                            request.addr.to_string(),
+                            request.port as u16,
                         ))
+                        .await
+                        {
+                            Ok(stream) => tokio::io::split(stream),
+                            Err(e) => return Err(e),
+                        };
+
+                        // Spawn two concurrent coroutines to transport the data between client and server
+                        tokio::select!(
+                            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+                            _ = write_back_tcp_traffic(&mut server_reader, client_writer) => (),
+                        );
+
+                        Ok(())
                     }
-                }
+                    crate::protocol::common::command::Command::Udp => {
+                        // Establish UDP connection to remote host
+                        let socket = UdpSocket::bind("0.0.0.0:0").await?;
 
-                // Setup the reader and writer for both the client and server so that we can transport the data
-                let (server_reader, server_writer) = (socket.clone(), socket.clone());
-                let client_packet_reader = TrojanPacketReader::new(client_reader);
+                        // Setup the reader and writer for both the client and server so that we can transport the data
+                        let client_reader =
+                            FramedRead::new(client_reader, TrojanUdpPacketCodec::new());
 
-                tokio::select!(
-                    _ = trojan::packet::packet_reader_to_udp_packet_writer(client_packet_reader, server_writer) => (),
-                    _ = write_back_udp_traffic(client_writer, server_reader, request) => ()
-                );
+                        tokio::select!(
+                            _ = trojan::packet::packet_stream_client_udp(client_reader, &socket) => (),
+                            _ = write_back_udp_traffic(client_writer, &socket, request) => ()
+                        );
 
-                Ok(())
+                        Ok(())
+                    }
+                    // Trojan only supports 2 types of commands unlike SOCKS
+                    // * CONNECT X'01'
+                    // * UDP ASSOCIATE X'03'
+                    crate::protocol::common::command::Command::Bind => Err(Error::new(
+                        ErrorKind::Unsupported,
+                        "Bind command is not supported in Trojan",
+                    )),
+                };
             }
-            crate::protocol::common::command::Command::Bind => Err(Error::new(
-                ErrorKind::Unsupported,
-                "Bind command is not supported in Trojan",
-            )),
-        };
+            _ => return Err(Error::new(ErrorKind::Unsupported, "GrpcHandler only supports Trojan for now")),
+        }
     }
 }
 
@@ -104,7 +98,7 @@ async fn write_back_tcp_traffic<R: AsyncRead + Unpin>(
     writer: Sender<Result<Hunk, Status>>,
 ) -> io::Result<()> {
     loop {
-        let mut buf = Vec::with_capacity(4096);
+        let mut buf = Vec::with_capacity(BUFFER_SIZE);
 
         match reader.read_buf(&mut buf).await {
             Ok(_) => (),
@@ -130,12 +124,13 @@ async fn write_back_tcp_traffic<R: AsyncRead + Unpin>(
 
 async fn write_back_udp_traffic(
     client_sender: Sender<Result<Hunk, Status>>,
-    udp_socket: Arc<UdpSocket>,
+    udp_socket: &UdpSocket,
     request: InboundRequest,
 ) -> io::Result<()> {
+    let mut udp_buffer = vec![0u8; BUFFER_SIZE];
+
     loop {
-        let mut data = vec![0u8; 4096];
-        let n = match udp_socket.recv(&mut data).await {
+        let n = match udp_socket.recv(&mut udp_buffer).await {
             Ok(n) => n,
             Err(_) => {
                 return Err(io::Error::new(
@@ -145,7 +140,7 @@ async fn write_back_udp_traffic(
             }
         };
 
-        let mut buf = Vec::with_capacity(4096);
+        let mut buf = Vec::with_capacity(BUFFER_SIZE);
 
         // Write address type to remote
         buf.put_u8(request.atype as u8);
@@ -167,8 +162,8 @@ async fn write_back_udp_traffic(
         // Write port, payload size, CRLF, and the payload data into the stream
         buf.put_u16(request.port);
         buf.put_u16(n as u16);
-        buf.put_u16(0x0D0A);
-        buf.put_slice(&data[..n]);
+        buf.put_u16(CRLF);
+        buf.put_slice(&udp_buffer[..n]);
 
         match client_sender.send(Ok(Hunk { data: buf })).await {
             Ok(_) => (),

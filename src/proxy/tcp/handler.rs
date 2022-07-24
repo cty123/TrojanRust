@@ -2,25 +2,27 @@ use crate::config::base::{OutboundConfig, OutboundMode};
 use crate::config::tls::{make_client_config, NoCertificateVerification};
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::protocol::common::stream::StandardTcpStream;
-use crate::protocol::trojan;
-use crate::protocol::trojan::handshake;
-use crate::protocol::trojan::packet::{
-    packet_reader_to_stream_writer, stream_reader_to_packet_writer, TrojanPacketReader,
-    TrojanPacketWriter,
-};
-use crate::protocol::trojan::HEX_SIZE;
+use crate::protocol::trojan::{self, handshake, packet::TrojanUdpPacketCodec, HEX_SIZE};
 use crate::proxy::base::SupportedProtocols;
+use crate::transport::grpc_stream::GrpcHunkStream;
+use crate::transport::grpc_transport::grpc_service_client::GrpcServiceClient;
+use crate::transport::grpc_transport::Hunk;
 
+use futures::{Stream, StreamExt};
 use log::info;
 use once_cell::sync::OnceCell;
 use rustls::{ClientConfig, ServerName};
 use sha2::{Digest, Sha224};
-use std::io::{Error, ErrorKind, Result};
+use sluice::pipe;
+use std::io::{self, Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio_rustls::TlsConnector;
+use tokio_util::codec::Framed;
+use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
+use tonic::Status;
 
 /// Static life time TCP server outbound traffic handler to avoid ARC
 /// The handler is initialized through init() function
@@ -99,37 +101,35 @@ impl TcpHandler {
         &self,
         inbound_stream: StandardTcpStream<T>,
         request: InboundRequest,
-    ) -> Result<()> {
+    ) -> io::Result<()> {
         match self.mode {
             OutboundMode::DIRECT => self.handle_direct_stream(request, inbound_stream).await?,
             OutboundMode::TCP => self.handle_tcp_stream(request, inbound_stream).await?,
             OutboundMode::QUIC => self.handle_quic_stream(request, inbound_stream).await?,
-            OutboundMode::GRPC => {
-                return Err(Error::new(
-                    ErrorKind::Unsupported,
-                    "GRPC transport outbound is not yet supported",
-                ))
-            }
+            OutboundMode::GRPC => self.handle_grpc_stream(request, inbound_stream).await?,
         }
 
         Ok(())
     }
 
-    /// Handle direct data transport without any proxy protocol
+    /// Handle inbound TCP stream with direct outbound proxy strategy. Based on the inbound request, the handler
+    /// will need to determine the way the input data is encrypted from the proxy request body and decrypt it to
+    /// get the actual payload. Finally, it forwards the payload directly either with TCP or UDP flow.
     async fn handle_direct_stream<T: AsyncRead + AsyncWrite + Unpin + Send>(
         &self,
         request: InboundRequest,
-        inbound_stream: StandardTcpStream<T>,
-    ) -> Result<()> {
+        mut inbound_stream: StandardTcpStream<T>,
+    ) -> io::Result<()> {
+        // Extract the destination port and address from the proxy request
         let addr = request.into_destination_address();
 
+        // Based on the protocol in the request body, decrypt the payload respectively
         match request.proxy_protocol {
-            SupportedProtocols::SOCKS => todo!(),
             SupportedProtocols::TROJAN => {
                 match request.transport_protocol {
                     TransportProtocol::TCP => {
                         // Connect to remote server from the proxy request
-                        let outbound_stream = match TcpStream::connect(addr).await {
+                        let mut outbound_stream = match TcpStream::connect(addr).await {
                             Ok(stream) => stream,
                             Err(e) => {
                                 return Err(Error::new(
@@ -139,44 +139,32 @@ impl TcpHandler {
                             }
                         };
 
-                        // Setup the reader and writer for both the client and server so that we can transport the data
-                        let (mut client_reader, mut client_writer) =
-                            tokio::io::split(inbound_stream);
-                        let (mut server_reader, mut server_writer) =
-                            tokio::io::split(outbound_stream);
-
-                        tokio::select!(
-                            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
-                            _ = tokio::io::copy(&mut server_reader, &mut client_writer) => (),
-                        );
+                        // Obtain reader and writer for inbound and outbound streams
+                        tokio::io::copy_bidirectional(&mut inbound_stream, &mut outbound_stream)
+                            .await?;
                     }
                     TransportProtocol::UDP => {
                         // Establish UDP connection to remote host
-                        let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
-                        match socket.connect(addr).await {
-                            Ok(_) => (),
-                            Err(e) => {
-                                return Err(Error::new(
-                                    ErrorKind::ConnectionRefused,
-                                    format!("failed to connect to udp {}: {}", addr, e),
-                                ))
-                            }
-                        }
+                        let socket = UdpSocket::bind("0.0.0.0:0").await?;
 
                         // Setup the reader and writer for both the client and server so that we can transport the data
-                        let (server_reader, server_writer) = (socket.clone(), socket.clone());
-                        let (client_reader, client_writer) = tokio::io::split(inbound_stream);
-                        let (client_packet_reader, client_packet_writer) = (
-                            TrojanPacketReader::new(client_reader),
-                            TrojanPacketWriter::new(client_writer, request),
-                        );
+                        let (sink, stream) =
+                            Framed::new(inbound_stream, TrojanUdpPacketCodec::new()).split();
 
                         tokio::select!(
-                            _ = trojan::packet::packet_reader_to_udp_packet_writer(client_packet_reader, server_writer) => (),
-                            _ = trojan::packet::udp_packet_reader_to_packet_writer(server_reader, client_packet_writer) => ()
+                            _ = trojan::packet::packet_stream_client_udp(stream, &socket) => (),
+                            _ = trojan::packet::packet_stream_server_udp(&socket, sink) => ()
                         );
                     }
                 };
+            }
+            // Handler currently doesn't support SOCKS protocol.
+            // Also not sure if we should support SOCKS protocol for the scope of this project.
+            SupportedProtocols::SOCKS => {
+                return Err(Error::new(
+                    ErrorKind::Unsupported,
+                    "Proxy request can't have socks as proxy protocol",
+                ))
             }
             SupportedProtocols::DIRECT => {
                 return Err(Error::new(
@@ -191,11 +179,13 @@ impl TcpHandler {
         Ok(())
     }
 
+    /// #Experimental functionality
+    /// QUIC support is currently experimental.
     async fn handle_quic_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         &self,
         request: InboundRequest,
         inbound_stream: StandardTcpStream<T>,
-    ) -> Result<()> {
+    ) -> io::Result<()> {
         // Dial remote proxy server
         let _roots = rustls::RootCertStore::empty();
         let client_crypto = rustls::ClientConfig::builder()
@@ -229,11 +219,14 @@ impl TcpHandler {
         Ok(())
     }
 
+    /// Handle inbound TCP stream with TCP outbound proxy strategy. This function is used when the program serves as
+    /// the client end of proxy chain, such that it read the plaintext data from the inbound stream and will encrypt
+    /// the it with the selected proxy and forward the proxy request to remote server.
     async fn handle_tcp_stream<T: AsyncRead + AsyncWrite + Unpin + Send>(
         &self,
         request: InboundRequest,
-        inbound_stream: StandardTcpStream<T>,
-    ) -> Result<()> {
+        mut inbound_stream: StandardTcpStream<T>,
+    ) -> io::Result<()> {
         // Establish the initial connection with remote server
         let connection = match self.destination {
             Some(dest) => TcpStream::connect(dest).await?,
@@ -270,24 +263,21 @@ impl TcpHandler {
                 // Start handshake to establish proxy stream
                 handshake(&mut outbound_stream, &request, &self.secret).await?;
 
-                // Obtain reader and writer for inbound and outbound streams
-                let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);
-                let (mut server_reader, mut server_writer) = tokio::io::split(outbound_stream);
-
                 match request.transport_protocol {
                     TransportProtocol::TCP => {
-                        tokio::select!(
-                            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
-                            _ = tokio::io::copy(&mut server_reader, &mut client_writer) => (),
-                        );
+                        // Obtain reader and writer for inbound and outbound streams
+                        tokio::io::copy_bidirectional(&mut inbound_stream, &mut outbound_stream)
+                            .await?;
                     }
                     TransportProtocol::UDP => {
-                        let server_reader = TrojanPacketReader::new(server_reader);
-                        let server_writer = TrojanPacketWriter::new(server_writer, request);
+                        // Setup the reader and writer for both the client and server so that we can transport the data
+                        let (sink, stream) =
+                            Framed::new(inbound_stream, TrojanUdpPacketCodec::new()).split();
+                        let (server_reader, server_writer) = tokio::io::split(outbound_stream);
 
                         tokio::select!(
-                            _ = packet_reader_to_stream_writer(server_reader, &mut client_writer) => (),
-                            _ = stream_reader_to_packet_writer(&mut client_reader, server_writer) => (),
+                            _ = trojan::packet::packet_stream_server_tcp(stream, server_writer) => (),
+                            _ = trojan::packet::packet_stream_client_tcp(server_reader, sink, request) => (),
                         );
                     }
                 }
@@ -296,12 +286,104 @@ impl TcpHandler {
                 return Err(Error::new(ErrorKind::Unsupported, "Unsupported protocol"))
             }
             SupportedProtocols::DIRECT => {
-                // StandardStream::new(stream)
                 return Err(Error::new(ErrorKind::Unsupported, "Unsupported protocol"));
             }
         };
 
         info!("Connection finished");
         Ok(())
+    }
+
+    async fn handle_grpc_stream<T: AsyncRead + AsyncWrite + Unpin + Send>(
+        &self,
+        request: InboundRequest,
+        inbound_stream: StandardTcpStream<T>,
+    ) -> io::Result<()> {
+        // Remote GrpcService can not be None, otherwise we have no idea how to handle the proxy request
+        if self.destination == None {
+            return Err(Error::new(
+                ErrorKind::Unsupported,
+                "Destination can not be null",
+            ));
+        }
+
+        // Safety: We have checked previous for self.destination equals None condition, so that the unwrap will always work.
+        let endpoint = match self.tls {
+            None => format!("http://{}", self.destination.unwrap()),
+            Some(_) => format!("https://{}", self.destination.unwrap()),
+        };
+
+        info!("connecting");
+
+        // Establish GRPC connection with remote server
+        let mut connection = match GrpcServiceClient::connect(endpoint).await {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(Error::new(
+                    ErrorKind::ConnectionRefused,
+                    "Failed to connect to remote GRPC server",
+                ))
+            }
+        };
+
+        // Create memory pipe
+        let (pipe_reader, mut server_writer) = match pipe::pipe() {
+            (reader, writer) => (reader.compat(), writer.compat_write()),
+        };
+        let request_stream = GrpcHunkStream::new(pipe_reader);
+
+        // Connect to remote server
+        let server_reader = match connection.tun(request_stream).await {
+            Ok(c) => c.into_inner(),
+            Err(_) => {
+                return Err(Error::new(
+                    ErrorKind::ConnectionRefused,
+                    "failed to write request data",
+                ))
+            }
+        };
+
+        // Handshake to send the Trojan proxy request
+        if let Err(e) = handshake(&mut server_writer, &request, &self.secret).await {
+            return Err(e);
+        }
+
+        let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);
+
+        info!("request: {}", request.command);
+
+        tokio::select!(
+            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+            _ = transport_grpc_server(server_reader, &mut client_writer) => ()
+        );
+
+        Ok(())
+    }
+}
+
+pub async fn transport_grpc_server<
+    R: Stream<Item = Result<Hunk, Status>> + Unpin,
+    W: AsyncWrite + Unpin,
+>(
+    mut server_reader: R,
+    mut client_writer: W,
+) -> io::Result<()> {
+    loop {
+        let payload = match server_reader.next().await {
+            Some(res) => match res {
+                Ok(h) => h,
+                Err(_) => {
+                    return Err(Error::new(
+                        ErrorKind::ConnectionReset,
+                        "Connection interrupted",
+                    ))
+                }
+            },
+            None => return Err(Error::new(ErrorKind::BrokenPipe, "Read EOF")),
+        };
+
+        if let Err(e) = client_writer.write(&payload.data).await {
+            return Err(e);
+        }
     }
 }

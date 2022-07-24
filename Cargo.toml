@@ -10,7 +10,7 @@ edition = "2021"
 async-trait = "0.1.56"
 byteorder = "1.4.3"
 bytes = "1.1.0"
-clap = "3.2.8"
+clap = "3.2.12"
 env_logger = "0.9.0"
 futures = { version = "0.3.21", features = ["thread-pool"] }
 itertools = "0.10.3"
@@ -19,7 +19,7 @@ rustls = { version = "0.20", features = ["dangerous_configuration"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 sha2 = { version = "0.10.2" }
-tokio = { version = "1.19", features = ["full"] }
+tokio = { version = "1.20", features = ["full"] }
 tokio-util = { version = "0.7.3", features = ["full"] }
 tokio-stream = { version = "0.1.9" }
 tokio-rustls = "0.23.4"
@@ -34,12 +34,13 @@ tonic = { version = "0.7.2", features = [
 ] }
 prost = "0.10.4"
 uninit = "0.5.0"
-webpki-roots = "0.22.3"
+webpki-roots = "0.22.4"
 rustls-pemfile = "1.0.0"
 mockall = "0.11.1"
 lazy_static = "1.4.0"
 quinn = "0.8.3"
 prost-build = "0.10.4"
+sluice = "0.5.5"
 once_cell = "1.13.0"
 
 [build-dependencies]

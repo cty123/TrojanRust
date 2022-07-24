@@ -21,13 +21,20 @@ fn test_acceptor_initialization() {
 
 #[tokio::test]
 async fn test_buffer() {
-    let mut buf: Vec<u8> = Vec::with_capacity(2);
+    // let mut buf: Vec<u8> = Vec::with_capacity(2);
 
-    let (mut server, mut client) = tokio::io::duplex(512);
+    // let (mut server, mut client) = tokio::io::duplex(512);
 
-    server.write(&[2u8; 16]).await.unwrap();
+    // server.write(&[2u8; 16]).await.unwrap();
 
-    client.read_exact(&mut buf).await.unwrap();
+    // client.read_exact(&mut buf).await.unwrap();
 
-    print!("{:?}", buf);
+    // print!("{:?}", buf);
+    use tokio::sync::oneshot;
+
+    let (tx, rx) = oneshot::channel::<u32>();
+
+    tx.send(1);
+    // tx.send(2);
+
 }

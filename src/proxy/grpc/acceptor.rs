@@ -8,8 +8,7 @@ use crate::{
 use once_cell::sync::OnceCell;
 use sha2::{Digest, Sha224};
 use std::io::{self, Error, ErrorKind};
-use tokio::sync::mpsc::Sender;
-use tonic::{Request, Status, Streaming};
+use tonic::{Request, Streaming};
 
 /// Static lifetime GRPC acceptor
 static GRPC_ACCEPTOR: OnceCell<GrpcAcceptor> = OnceCell::new();
@@ -22,6 +21,7 @@ pub struct GrpcAcceptor {
     secret: Vec<u8>,
 }
 
+/// GrpcAcceptor should implment 2 types of GRPC transport protocol, Hunk and MultiHunk.
 impl GrpcAcceptor {
     pub fn new(inbound_config: &InboundConfig) -> &'static GrpcAcceptor {
         let secret = match inbound_config.protocol {
@@ -54,7 +54,10 @@ impl GrpcAcceptor {
         // TODO: Support more protocols than just Trojan
         let request = match self.protocol {
             SupportedProtocols::TROJAN => {
+                // Read trojan request from the inbound stream
                 let trojan_request = trojan::parse(&mut inbound_reader).await?;
+
+                // Validate trojan request before dispatching
                 if !trojan_request.validate(&self.secret) {
                     return Err(Error::new(
                         ErrorKind::InvalidData,

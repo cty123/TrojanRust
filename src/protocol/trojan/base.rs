@@ -1,10 +1,10 @@
-use std::fmt;
-
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::proxy::base::SupportedProtocols;
+
+use std::fmt;
 
 pub const HEX_SIZE: usize = 56;
 pub const CRLF: u16 = 0x0D0A;
@@ -66,18 +66,6 @@ impl Request {
         }
 
         return secret == self.hex;
-    }
-
-    #[inline]
-    pub fn from_request(request: &InboundRequest, secret: Vec<u8>) -> Request {
-        Request {
-            hex: secret,
-            command: request.command,
-            atype: request.atype,
-            addr: request.addr.clone(),
-            port: request.port,
-            proxy_protocol: request.proxy_protocol,
-        }
     }
 }
 

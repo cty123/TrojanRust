@@ -5,11 +5,12 @@ const CONNECT: u8 = 1;
 const BIND: u8 = 2;
 const UDP: u8 = 3;
 
+#[repr(u8)]
 #[derive(Copy, Clone)]
 pub enum Command {
-    Connect,
-    Bind,
-    Udp,
+    Connect = 1,
+    Bind = 2,
+    Udp = 3,
 }
 
 impl Command {
@@ -24,15 +25,6 @@ impl Command {
                 "Unsupported command request",
             )),
         };
-    }
-
-    #[inline]
-    pub fn to_byte(&self) -> u8 {
-        match self {
-            Command::Connect => CONNECT,
-            Command::Bind => BIND,
-            Command::Udp => UDP,
-        }
     }
 }
 

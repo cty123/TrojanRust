@@ -43,8 +43,8 @@ pub async fn handshake<T: AsyncWrite + Unpin>(
     // Write request header
     stream.write_all(secret).await?;
     stream.write_u16(CRLF).await?;
-    stream.write_u8(request.command.to_byte()).await?;
-    stream.write_u8(request.atype.to_byte()).await?;
+    stream.write_u8(request.command as u8).await?;
+    stream.write_u8(request.atype as u8).await?;
     match &request.addr {
         IpAddress::IpAddr(IpAddr::V4(ipv4)) => {
             stream.write_all(&ipv4.octets()).await?;

@@ -1,0 +1,18 @@
+{
+    "inbound": {
+        "mode": "TCP",
+        "protocol": "SOCKS",
+        "address": "0.0.0.0",
+        "port": 8080
+    },
+    "outbound": {
+        "mode": "GRPC",
+        "protocol": "TROJAN",
+        "address": "0.0.0.0",
+        "port": 8081,
+        "secret": "123123"
+    },
+    "tls": {
+        "host_name": "example.com"
+    }
+}

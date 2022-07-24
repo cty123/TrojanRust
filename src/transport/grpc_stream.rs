@@ -1,22 +1,42 @@
 use crate::transport::grpc_transport::{Hunk, MultiHunk};
 
 use bytes::{Buf, BufMut, BytesMut};
-use futures::Stream;
+use futures::ready;
+use futures::{executor::block_on, future::poll_fn, FutureExt, Stream};
 use std::io;
 use std::pin::Pin;
 use std::task::Poll;
-use tokio::{io::AsyncRead, io::AsyncWrite, sync::mpsc::Sender};
-use tonic::{self, Status, Streaming};
+use tokio::io::ReadBuf;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    sync::mpsc::Sender,
+};
+use tonic::{self, Streaming};
 
 pub struct GrpcDataStream<T> {
     reader: Streaming<T>,
     buf: BytesMut,
 }
 
+pub struct GrpcDataSink<T> {
+    writer: Sender<T>,
+    buf: BytesMut,
+}
+
 impl<T> GrpcDataStream<T> {
+    #[inline]
     pub fn from_reader(reader: Streaming<T>) -> Self {
         Self {
             reader,
+            buf: BytesMut::new(),
+        }
+    }
+}
+
+impl<T> GrpcDataSink<T> {
+    pub fn from_writer(writer: Sender<T>) -> Self {
+        Self {
+            writer,
             buf: BytesMut::new(),
         }
     }
@@ -96,35 +116,39 @@ impl AsyncRead for GrpcDataStream<Hunk> {
     }
 }
 
-// pub struct GrpcWriterDataStream {
-//     inner: Sender<Result<Hunk, Status>>,
-//     buffer: BytesMut,
-// }
+pub struct GrpcHunkStream<T> {
+    inner: T,
+}
 
-// impl AsyncWrite for GrpcWriterDataStream {
-//     fn poll_write(
-//         self: Pin<&mut Self>,
-//         cx: &mut std::task::Context<'_>,
-//         buf: &[u8],
-//     ) -> Poll<Result<usize, io::Error>> {
-//         self.buffer.put_slice(buf);
+impl<T> GrpcHunkStream<T> {
+    pub fn new(inner: T) -> Self {
+        Self { inner }
+    }
+}
 
-//         return Poll::Ready(Ok(buf.len()));
-//     }
+impl<T> Stream for GrpcHunkStream<T>
+where
+    T: AsyncRead + Unpin,
+{
+    type Item = Hunk;
 
-//     fn poll_flush(
-//         self: Pin<&mut Self>,
-//         cx: &mut std::task::Context<'_>,
-//     ) -> Poll<Result<(), io::Error>> {
-//         if self.buffer.remaining() > 0 {
-//             self.inner.try_send(message)
-//         }
-//     }
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        let mut buf = vec![0; 4096];
 
-//     fn poll_shutdown(
-//         self: Pin<&mut Self>,
-//         cx: &mut std::task::Context<'_>,
-//     ) -> Poll<Result<(), io::Error>> {
-//         todo!()
-//     }
-// }
+        let mut read_buf = ReadBuf::new(&mut buf);
+
+        match ready!(Pin::new(&mut self.inner).poll_read(cx, &mut read_buf)) {
+            Ok(_) => (),
+            Err(_) => return Poll::Ready(None),
+        }
+
+        let size = read_buf.filled().len();
+
+        buf.truncate(size);
+
+        return Poll::Ready(Some(Hunk { data: buf }));
+    }
+}

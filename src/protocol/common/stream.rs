@@ -1,17 +1,6 @@
-use async_trait::async_trait;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-
-#[async_trait]
-pub trait PacketReader {
-    async fn read(&mut self) -> std::io::Result<Vec<u8>>;
-}
-
-#[async_trait]
-pub trait PacketWriter {
-    async fn write(&mut self, buf: &[u8]) -> std::io::Result<()>;
-}
 
 pub enum StandardTcpStream<T> {
     Plain(T),

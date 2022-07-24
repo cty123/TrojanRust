@@ -4,7 +4,8 @@ use crate::transport::grpc_transport::grpc_service_server::GrpcServiceServer;
 use crate::transport::grpc_transport::{Hunk, MultiHunk};
 
 use futures::Stream;
-use log::info;
+use log::{info, warn};
+use std::fmt::format;
 use std::io::{self, Error, ErrorKind};
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
@@ -17,7 +18,6 @@ use super::handler::GrpcHandler;
 
 // TODO: Need more discretion in detemining the value for channel size, or make it configurable
 const CHANNEL_SIZE: usize = 16;
-const BUFFER_SIZE: usize = 4096;
 
 /// Start running the GRPC server
 pub async fn start(
@@ -65,9 +65,9 @@ pub async fn start(
         .await
     {
         Ok(_) => Ok(()),
-        Err(_) => Err(Error::new(
+        Err(e) => Err(Error::new(
             ErrorKind::Interrupted,
-            "Failed to start grpc server",
+            format!("Failed to start grpc server: {}", e),
         )),
     };
 }
@@ -93,26 +93,25 @@ impl GrpcService for GrpcProxyService {
         request: Request<Streaming<Hunk>>,
     ) -> Result<Response<Self::TunStream>, Status> {
         info!("Received GRPC request");
+
         let (acceptor, handler) = (self.acceptor, self.handler);
-        let (tx, rx) = mpsc::channel(16);
+        let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
         tokio::spawn(async move {
             let (request, client_reader) = match acceptor.accept_hunk(request).await {
                 Ok((req, reader)) => (req, reader),
-                Err(_) => {
-                    return Err(Error::new(
-                        ErrorKind::ConnectionAborted,
-                        "Failed to accept the inbound traffic",
-                    ))
+                Err(e) => {
+                    warn!("Failed to accept the inbound traffic: {}", e);
+                    return;
                 }
             };
 
-            return match handler.handle_hunk(client_reader, tx, request).await {
-                Ok(_) => Ok(()),
-                Err(_) => Err(Error::new(
-                    ErrorKind::ConnectionReset,
-                    "Failed to handle inbound traffic",
-                )),
+            match handler.handle_hunk(client_reader, tx, request).await {
+                Ok(_) => return,
+                Err(e) => {
+                    warn!("Failed to handle inbound traffic: {}", e);
+                    return;
+                }
             };
         });
 
