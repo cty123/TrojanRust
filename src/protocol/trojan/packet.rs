@@ -13,19 +13,29 @@ use tokio::net::UdpSocket;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Decoder, Encoder};
 
+/// Trojan UDP packet header size may vary due to the type of IPAddress to be proxied:
+/// Type    | Atype  | Address        | Port   | Payload Size | CRLF   |
+/// --------|--------|----------------|--------|--------------|--------|
+/// IPv4:   | 1 byte | 4 byte         | 2 byte | 2 byte       | 2 byte |
+/// IPv4:   | 1 byte | 16 byte        | 2 byte | 2 byte       | 2 byte |
+/// Domain: | 1 byte | 1 - 255 byte   | 2 byte | 2 byte       | 2 byte |
 const IPV4_HEADER_SIZE: usize = 11;
 const IPV6_HEADER_SIZE: usize = 23;
+
+/// Define the size of the buffer used to transport the data back and forth
+const BUF_SIZE: usize = 4096;
 
 /// According the official documentation for Trojan protocol, the UDP data will be segmented into Trojan UDP packets,
 /// which allows the outbound handler to also forward them as real UDP packets to the desired destinations.
 /// Link: https://trojan-gfw.github.io/trojan/protocol.html
 pub struct TrojanUdpPacket {
-    atype: Atype,
-    dest: IpAddress,
-    port: u16,
-    payload: Bytes,
+    pub atype: Atype,
+    pub dest: IpAddress,
+    pub port: u16,
+    pub payload: Bytes,
 }
 
+/// TrojanUdpPacketCodec used to encode and decode between Trojan UDP packet and raw bytes data.
 pub struct TrojanUdpPacketCodec {}
 
 impl TrojanUdpPacketCodec {
@@ -158,6 +168,7 @@ impl Decoder for TrojanUdpPacketCodec {
     }
 }
 
+/// Helper function to transport data from UDP packet stream to tokio UDP socket
 pub async fn packet_stream_client_udp<R: Stream<Item = Result<TrojanUdpPacket, Error>> + Unpin>(
     mut packet_reader: R,
     socket: &UdpSocket,
@@ -194,6 +205,7 @@ pub async fn packet_stream_client_udp<R: Stream<Item = Result<TrojanUdpPacket, E
     }
 }
 
+/// Helper function to transport data from tokio UDP socket to Trojan UDP packet sink.
 pub async fn packet_stream_server_udp<W: Sink<TrojanUdpPacket> + Unpin>(
     socket: &UdpSocket,
     mut packet_writer: W,
@@ -201,7 +213,7 @@ pub async fn packet_stream_server_udp<W: Sink<TrojanUdpPacket> + Unpin>(
     <W as futures::Sink<TrojanUdpPacket>>::Error: std::fmt::Display,
 {
     loop {
-        let mut buf = vec![0u8; 4096];
+        let mut buf = vec![0u8; BUF_SIZE];
 
         let (size, dest) = match socket.recv_from(&mut buf).await {
             Ok((s, d)) => (s, d),
@@ -237,6 +249,7 @@ pub async fn packet_stream_server_udp<W: Sink<TrojanUdpPacket> + Unpin>(
     }
 }
 
+/// Helper function to transport Trojan UDP packet stream to the destination AsyncWrite stream.
 pub async fn packet_stream_server_tcp<
     R: Stream<Item = Result<TrojanUdpPacket, Error>> + Unpin,
     W: AsyncWrite + Unpin,
@@ -274,6 +287,7 @@ pub async fn packet_stream_server_tcp<
     }
 }
 
+/// Helper function to transport proxy response data from an AsyncRead stream to the client TrojanUdpPacket sink.
 pub async fn packet_stream_client_tcp<R: AsyncRead + Unpin, W: Sink<TrojanUdpPacket> + Unpin>(
     mut server_reader: R,
     mut packet_writer: W,
@@ -282,7 +296,7 @@ pub async fn packet_stream_client_tcp<R: AsyncRead + Unpin, W: Sink<TrojanUdpPac
     <W as futures::Sink<TrojanUdpPacket>>::Error: std::fmt::Display,
 {
     loop {
-        let mut buf = vec![0u8; 4096];
+        let mut buf = vec![0u8; BUF_SIZE];
 
         let size = match server_reader.read(&mut buf).await {
             Ok(s) => s,
