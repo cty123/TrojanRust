@@ -45,7 +45,7 @@ pub async fn handshake<T: AsyncWrite + Unpin>(
     stream.write_u16(CRLF).await?;
     stream.write_u8(request.command as u8).await?;
     stream.write_u8(request.atype as u8).await?;
-    match &request.addr {
+    match &request.addr_port.ip {
         IpAddress::IpAddr(IpAddr::V4(ipv4)) => {
             stream.write_all(&ipv4.octets()).await?;
         }
@@ -53,10 +53,10 @@ pub async fn handshake<T: AsyncWrite + Unpin>(
             stream.write_all(&ipv6.octets()).await?;
         }
         IpAddress::Domain(domain) => {
-            stream.write_all(&domain.to_bytes()).await?;
+            stream.write_all(&domain.as_bytes()).await?;
         }
     }
-    stream.write_u16(request.port).await?;
+    stream.write_u16(request.addr_port.port).await?;
     stream.write_u16(CRLF).await?;
     stream.flush().await?;
 

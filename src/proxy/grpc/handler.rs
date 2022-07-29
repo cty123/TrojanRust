@@ -10,7 +10,7 @@ use crate::{
 use bytes::BufMut;
 use once_cell::sync::OnceCell;
 use std::io::{self, Error, ErrorKind};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
@@ -45,12 +45,10 @@ impl GrpcHandler {
             SupportedProtocols::TROJAN => {
                 return match request.command {
                     crate::protocol::common::command::Command::Connect => {
+                        let ip_port: SocketAddr = request.addr_port.into();
+
                         // Establish connection to remote server as specified by proxy request
-                        let (mut server_reader, mut server_writer) = match TcpStream::connect((
-                            request.addr.to_string(),
-                            request.port as u16,
-                        ))
-                        .await
+                        let (mut server_reader, mut server_writer) = match TcpStream::connect(ip_port).await
                         {
                             Ok(stream) => tokio::io::split(stream),
                             Err(e) => return Err(e),
@@ -146,7 +144,7 @@ async fn write_back_udp_traffic(
         buf.put_u8(request.atype as u8);
 
         // Write back the address of the trojan request
-        match request.addr {
+        match request.addr_port.ip {
             IpAddress::IpAddr(IpAddr::V4(addr)) => {
                 buf.put_slice(&addr.octets());
             }
@@ -154,13 +152,13 @@ async fn write_back_udp_traffic(
                 buf.put_slice(&addr.octets());
             }
             IpAddress::Domain(ref domain) => {
-                buf.put_u8(domain.to_bytes().len() as u8);
-                buf.put_slice(domain.to_bytes());
+                buf.put_u8(domain.as_bytes().len() as u8);
+                buf.put_slice(domain.as_bytes());
             }
         }
 
         // Write port, payload size, CRLF, and the payload data into the stream
-        buf.put_u16(request.port);
+        buf.put_u16(request.addr_port.port);
         buf.put_u16(n as u16);
         buf.put_u16(CRLF);
         buf.put_slice(&udp_buffer[..n]);

@@ -1,9 +1,17 @@
 use bytes::Bytes;
 use std::fmt::{self};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 
 pub const IPV4_SIZE: usize = 4;
 pub const IPV6_SIZE: usize = 16;
+
+/// DomainName is a vector of bytes whose length can go up to 255. This is not the most efficient way of
+/// storing DomainName, should consider using stack memory to avoid calling malloc and free repeatedly.
+/// This may be altered after we perform a thourough benchmark to determine the tradeoffs between slice and Vec.
+#[derive(Clone)]
+pub struct DomainName {
+    inner: Bytes,
+}
 
 /// Wrap around std::net::IpAddr to create a parent enum for all kinds of IpAddresses used in Trojan.
 /// Apart from the basic IPv4 and IPv6 types provided by standard library, DomainName is commonly used
@@ -14,12 +22,41 @@ pub enum IpAddress {
     Domain(DomainName),
 }
 
-/// DomainName is a vector of bytes whose length can go up to 256. This is not the most efficient way of
-/// storing DomainName, should consider using stack memory to avoid calling malloc and free repeatedly.
-/// This may be altered after we perform a thourough benchmark to determine the tradeoffs between slice and Vec.
-#[derive(Clone)]
-pub struct DomainName {
-    inner: Bytes,
+/// Wrapper class that contains the destination ip and port of the proxy request.
+/// The struct is capable of converting to SocketAddr class that can be used to establish an outbound connection.
+pub struct IpAddrPort {
+    pub ip: IpAddress,
+    pub port: u16,
+}
+
+impl IpAddrPort {
+    #[inline]
+    pub fn new(ip: IpAddress, port: u16) -> Self {
+        Self { ip, port }
+    }
+}
+
+impl Into<SocketAddr> for IpAddrPort {
+    #[inline]
+    fn into(self) -> SocketAddr {
+        match self.ip {
+            IpAddress::IpAddr(addr) => SocketAddr::new(addr, self.port),
+            IpAddress::Domain(domain) => {
+                let name = std::str::from_utf8(&domain.inner).unwrap_or("127.0.0.1");
+                let addrs = match (name, self.port).to_socket_addrs() {
+                    Ok(a) => a,
+                    Err(e) => {
+                        panic!("Failed to resolve DNS name: {}, {}", name, e);
+                    },
+                };
+
+                return match addrs.into_iter().nth(0) {
+                    Some(n) => n,
+                    None => panic!("No DNS result for the domain name: {}", name)
+                }
+            }
+        }
+    }
 }
 
 impl IpAddress {
@@ -49,7 +86,7 @@ impl IpAddress {
 }
 
 impl DomainName {
-    pub fn to_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         &self.inner
     }
 }

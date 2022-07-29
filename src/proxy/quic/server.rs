@@ -5,7 +5,7 @@ use crate::{
 };
 use futures::StreamExt;
 use quinn;
-use std::io::Result;
+use std::{io::Result, net::SocketAddr};
 use std::net::ToSocketAddrs;
 use tokio::net::TcpStream;
 
@@ -52,7 +52,8 @@ pub async fn start(
             let request = parse(&mut client_reader).await.unwrap().into_request();
 
             // Connect to remote server
-            let outbound_connection = TcpStream::connect(request.destination_address())
+            let addr_port: SocketAddr = request.addr_port.into();
+            let outbound_connection = TcpStream::connect(addr_port)
                 .await
                 .unwrap();
 

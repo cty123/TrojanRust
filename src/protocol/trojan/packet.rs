@@ -65,8 +65,8 @@ impl Encoder<TrojanUdpPacket> for TrojanUdpPacketCodec {
                 dst.put_slice(&addr.octets());
             }
             IpAddress::Domain(ref domain) => {
-                dst.put_u8(domain.to_bytes().len() as u8);
-                dst.put_slice(domain.to_bytes());
+                dst.put_u8(domain.as_bytes().len() as u8);
+                dst.put_slice(domain.as_bytes());
             }
         };
 
@@ -314,8 +314,8 @@ pub async fn packet_stream_client_tcp<R: AsyncRead + Unpin, W: Sink<TrojanUdpPac
         match packet_writer
             .send(TrojanUdpPacket {
                 atype: Atype::IPv4,
-                dest: request.addr.clone(),
-                port: request.port,
+                dest: request.addr_port.ip.clone(),
+                port: request.addr_port.port,
                 payload: Bytes::from(buf),
             })
             .await

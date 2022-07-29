@@ -1,9 +1,9 @@
+use crate::protocol::common::addr::IpAddrPort;
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 use crate::{protocol::common::addr::IpAddress, proxy::base::SupportedProtocols};
 
 use serde::{Deserialize, Serialize};
-use std::net::{SocketAddr, ToSocketAddrs};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TransportProtocol {
@@ -13,9 +13,8 @@ pub enum TransportProtocol {
 
 pub struct InboundRequest {
     pub atype: Atype,
-    pub addr: IpAddress,
+    pub addr_port: IpAddrPort,
     pub command: Command,
-    pub port: u16,
     pub transport_protocol: TransportProtocol,
     pub proxy_protocol: SupportedProtocols,
 }
@@ -32,24 +31,10 @@ impl InboundRequest {
     ) -> Self {
         Self {
             atype,
-            addr,
+            addr_port: IpAddrPort::new(addr, port),
             command,
-            port,
             transport_protocol,
             proxy_protocol,
         }
-    }
-
-    #[inline]
-    pub fn destination_address(self) -> SocketAddr {
-        return match self.addr {
-            IpAddress::IpAddr(addr) => SocketAddr::new(addr, self.port),
-            IpAddress::Domain(domain) => (domain.to_string(), self.port)
-                .to_socket_addrs()
-                .unwrap()
-                .into_iter()
-                .nth(0)
-                .unwrap(),
-        };
     }
 }

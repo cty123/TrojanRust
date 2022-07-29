@@ -128,7 +128,7 @@ impl TcpHandler {
         let (proxy_protocol, transport_protocol) = (request.proxy_protocol, request.transport_protocol);
 
         // Extract the destination port and address from the proxy request
-        let addr = request.destination_address();
+        let addr: SocketAddr = request.addr_port.into();
 
         // Based on the protocol in the request body, decrypt the payload respectively
         match proxy_protocol {
