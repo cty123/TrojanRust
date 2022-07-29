@@ -3,7 +3,7 @@ use crate::protocol::common::atype::Atype;
 use crate::protocol::common::request::InboundRequest;
 use crate::protocol::trojan::base::CRLF;
 
-use bytes::{Buf, BufMut, Bytes};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures::{Sink, SinkExt, Stream};
 use log::warn;
 use std::io::{Error, ErrorKind};
@@ -296,9 +296,9 @@ pub async fn packet_stream_client_tcp<R: AsyncRead + Unpin, W: Sink<TrojanUdpPac
     <W as futures::Sink<TrojanUdpPacket>>::Error: std::fmt::Display,
 {
     loop {
-        let mut buf = vec![0u8; BUF_SIZE];
+        let mut buf = BytesMut::with_capacity(BUF_SIZE);
 
-        let size = match server_reader.read(&mut buf).await {
+        let _size = match server_reader.read_buf(&mut buf).await {
             Ok(s) => s,
             Err(e) => {
                 warn!(
@@ -309,14 +309,14 @@ pub async fn packet_stream_client_tcp<R: AsyncRead + Unpin, W: Sink<TrojanUdpPac
             }
         };
 
-        buf.truncate(size);
+        warn!("buf length: {}", buf.len());
 
         match packet_writer
             .send(TrojanUdpPacket {
                 atype: Atype::IPv4,
                 dest: request.addr_port.ip.clone(),
                 port: request.addr_port.port,
-                payload: Bytes::from(buf),
+                payload: buf.freeze(),
             })
             .await
         {
