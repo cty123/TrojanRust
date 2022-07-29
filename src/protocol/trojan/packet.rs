@@ -143,7 +143,7 @@ impl Decoder for TrojanUdpPacketCodec {
             Atype::DomainName => {
                 let len = src.get_u8();
                 let buf = src.copy_to_bytes(len as usize);
-                IpAddress::from_vec(buf.to_vec())
+                IpAddress::from_bytes(buf)
             }
         };
 

@@ -4,7 +4,7 @@ use crate::protocol::trojan::{self, CRLF};
 use crate::{
     protocol::common::request::InboundRequest,
     proxy::base::SupportedProtocols,
-    transport::{grpc_stream::GrpcDataStream, grpc_transport::Hunk},
+    transport::{grpc_stream::GrpcDataReaderStream, grpc_transport::Hunk},
 };
 
 use bytes::BufMut;
@@ -37,7 +37,7 @@ impl GrpcHandler {
 
     pub async fn handle_hunk(
         &self,
-        mut client_reader: GrpcDataStream<Hunk>,
+        mut client_reader: GrpcDataReaderStream<Hunk>,
         client_writer: Sender<Result<Hunk, Status>>,
         request: InboundRequest,
     ) -> io::Result<()> {

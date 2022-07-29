@@ -2,7 +2,7 @@ use crate::{
     config::base::InboundConfig,
     protocol::{common::request::InboundRequest, trojan},
     proxy::base::SupportedProtocols,
-    transport::{grpc_stream::GrpcDataStream, grpc_transport::Hunk},
+    transport::{grpc_stream::GrpcDataReaderStream, grpc_transport::Hunk},
 };
 
 use once_cell::sync::OnceCell;
@@ -43,15 +43,15 @@ impl GrpcAcceptor {
         })
     }
 
+    /// Handler function for proxying GRPC traffic with Hunk message payload.
     pub async fn accept_hunk(
         &self,
         request: Request<Streaming<Hunk>>,
-    ) -> io::Result<(InboundRequest, GrpcDataStream<Hunk>)> {
+    ) -> io::Result<(InboundRequest, GrpcDataReaderStream<Hunk>)> {
         // Convert request into inbound reader stream
-        let mut inbound_reader = GrpcDataStream::from_reader(request.into_inner());
+        let mut inbound_reader = GrpcDataReaderStream::from_reader(request.into_inner());
 
         // Based on the protocol, decide how to proceed with the inbound stream
-        // TODO: Support more protocols than just Trojan
         let request = match self.protocol {
             SupportedProtocols::TROJAN => {
                 // Read trojan request from the inbound stream
@@ -65,8 +65,9 @@ impl GrpcAcceptor {
                     ));
                 }
 
-                trojan_request.inbound_request()
+                trojan_request.into_request()
             }
+            // TODO: Support more protocols than just Trojan
             _ => return Err(Error::new(ErrorKind::Unsupported, "Unsupported protocol")),
         };
 

@@ -5,7 +5,6 @@ use crate::transport::grpc_transport::{Hunk, MultiHunk};
 
 use futures::Stream;
 use log::{info, warn};
-use std::fmt::format;
 use std::io::{self, Error, ErrorKind};
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
@@ -122,16 +121,8 @@ impl GrpcService for GrpcProxyService {
 
     async fn tun_multi(
         &self,
-        request: tonic::Request<Streaming<MultiHunk>>,
+        _request: tonic::Request<Streaming<MultiHunk>>,
     ) -> Result<Response<Self::TunMultiStream>, Status> {
-        let mut client_reader = request.into_inner();
-
-        // client_reader.into_async_read();
-
-        let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
-
-        Ok(Response::new(Box::pin(
-            tokio_stream::wrappers::ReceiverStream::new(rx),
-        )))
+        todo!() 
     }
 }

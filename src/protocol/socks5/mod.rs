@@ -17,7 +17,7 @@ pub async fn accept<T: AsyncRead + AsyncWrite + Unpin + Send>(
     init_ack(&mut stream).await?;
 
     // Read socks5 request and convert it to universal request
-    let request = parser::parse(&mut stream).await?.inbound_request();
+    let request = parser::parse(&mut stream).await?.into_request();
 
     // Write back the request port
     write_request_ack(&mut stream, port).await?;
@@ -34,7 +34,7 @@ async fn init_ack<T: AsyncRead + AsyncWrite + Unpin>(stream: &mut T) -> Result<(
     // TODO: Validate client hello message
     // Reply with server hello message
     let server_hello = ServerHello::new(0);
-    stream.write_all(&server_hello.to_bytes()).await?;
+    stream.write_all(&server_hello.bytes()).await?;
     stream.flush().await?;
 
     Ok(())

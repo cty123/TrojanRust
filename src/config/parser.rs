@@ -1,7 +1,7 @@
+use crate::config::base::Config;
+
 use std::fs::File;
 use std::io::{BufReader, Error, ErrorKind, Result};
-
-use crate::config::base::Config;
 
 /// Read and parse the json file located at path, will attempt to deserialize and throw error if the
 /// format is invalid.

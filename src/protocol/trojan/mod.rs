@@ -31,7 +31,7 @@ pub async fn accept<T: AsyncRead + AsyncWrite + Unpin + Send>(
         ));
     }
 
-    Ok((request.inbound_request(), stream))
+    Ok((request.into_request(), stream))
 }
 
 /// Helper function to establish Trojan connection to remote server

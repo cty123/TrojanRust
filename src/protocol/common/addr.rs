@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use std::fmt::{self};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -18,7 +19,7 @@ pub enum IpAddress {
 /// This may be altered after we perform a thourough benchmark to determine the tradeoffs between slice and Vec.
 #[derive(Clone)]
 pub struct DomainName {
-    inner: Vec<u8>,
+    inner: Bytes,
 }
 
 impl IpAddress {
@@ -42,7 +43,7 @@ impl IpAddress {
     }
 
     #[inline]
-    pub fn from_vec(addr: Vec<u8>) -> IpAddress {
+    pub fn from_bytes(addr: Bytes) -> IpAddress {
         IpAddress::Domain(DomainName { inner: addr })
     }
 }

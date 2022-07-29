@@ -6,7 +6,10 @@ use crate::proxy::base::SupportedProtocols;
 
 use std::fmt;
 
+/// Trojan hex payload is always 56 bytes
 pub const HEX_SIZE: usize = 56;
+
+/// Trojan protocol uses the 0x0D0A as deliminate for packet header and payload
 pub const CRLF: u16 = 0x0D0A;
 
 pub struct Request {
@@ -38,7 +41,7 @@ impl Request {
     }
 
     #[inline]
-    pub fn inbound_request(self) -> InboundRequest {
+    pub fn into_request(self) -> InboundRequest {
         return match self.command {
             Command::Udp => InboundRequest::new(
                 self.atype,

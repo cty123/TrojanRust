@@ -3,8 +3,10 @@ use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 
+/// Only implement SOCKS5 protocol
 pub const VERSION: u8 = 5;
 
+/// SOCKS proxy request body
 #[allow(dead_code)]
 pub struct Request {
     version: u8,
@@ -40,6 +42,7 @@ pub struct RequestAck {
 }
 
 impl ServerHello {
+    #[inline]
     pub fn new(method: u8) -> ServerHello {
         return ServerHello {
             version: VERSION,
@@ -47,8 +50,9 @@ impl ServerHello {
         };
     }
 
-    pub fn to_bytes(&self) -> [u8; 2] {
-        return [self.version, self.method];
+    #[inline]
+    pub fn bytes(self) -> [u8; 2] {
+        return [self.version, self.method]
     }
 }
 
@@ -95,7 +99,7 @@ impl Request {
     }
 
     #[inline]
-    pub fn inbound_request(self) -> InboundRequest {
+    pub fn into_request(self) -> InboundRequest {
         return match self.command {
             Command::Udp => InboundRequest::new(
                 self.atype,

@@ -34,7 +34,7 @@ pub async fn start(
         tokio::spawn(async move {
             // Establish QUIC connection with handshake
             let quinn::NewConnection {
-                connection,
+                connection: _,
                 mut bi_streams,
                 ..
             } = match conn.await {
@@ -49,10 +49,10 @@ pub async fn start(
             };
 
             // Read proxy request from the client stream
-            let request = parse(&mut client_reader).await.unwrap().inbound_request();
+            let request = parse(&mut client_reader).await.unwrap().into_request();
 
             // Connect to remote server
-            let outbound_connection = TcpStream::connect(request.into_destination_address())
+            let outbound_connection = TcpStream::connect(request.destination_address())
                 .await
                 .unwrap();
 

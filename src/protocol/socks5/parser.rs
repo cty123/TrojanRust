@@ -1,12 +1,12 @@
-use std::io::Result;
-use std::io::{Error, ErrorKind};
-
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
-
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 use crate::protocol::socks5::base::{Request, VERSION};
+
+use bytes::Bytes;
+use std::io::Result;
+use std::io::{Error, ErrorKind};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 
 pub async fn parse<T: AsyncRead + AsyncWrite + Unpin>(mut stream: T) -> Result<Request> {
     // Read version number
@@ -46,7 +46,7 @@ pub async fn parse<T: AsyncRead + AsyncWrite + Unpin>(mut stream: T) -> Result<R
 
             // Read address data
             stream.read_exact(&mut buf).await?;
-            IpAddress::from_vec(buf)
+            IpAddress::from_bytes(Bytes::from(buf))
         }
     };
 

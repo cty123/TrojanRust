@@ -11,7 +11,7 @@ use trojan_rust::proxy::tcp;
 
 lazy_static! {
     static ref ARGS: ArgMatches = Command::new("Trojan Rust")
-        .version("0.6")
+        .version("0.6.5")
         .author("cty123")
         .about("Trojan Rust is a rust implementation of the trojan protocol to circumvent GFW")
         .arg(
@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     );
 
     info!(
-        "Starting {} server to accept inbound traffic",
+        "Starting {:?} server to accept inbound traffic",
         CONFIG.0.mode
     );
 

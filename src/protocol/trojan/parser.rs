@@ -4,6 +4,7 @@ use crate::protocol::common::command::Command;
 use crate::protocol::trojan::base::{Request, HEX_SIZE};
 
 use std::io::Result;
+use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 pub async fn parse<T: AsyncRead + Unpin>(stream: &mut T) -> Result<Request> {
@@ -37,7 +38,7 @@ pub async fn parse<T: AsyncRead + Unpin>(stream: &mut T) -> Result<Request> {
             // Read domain name context
             let mut buf = vec![0u8; size];
             stream.read_exact(&mut buf).await?;
-            (size, IpAddress::from_vec(buf))
+            (size, IpAddress::from_bytes(Bytes::from(buf)))
         }
     };
 

@@ -1,6 +1,6 @@
 [package]
 name = "trojan-rust"
-version = "0.6.0"
+version = "0.6.5"
 authors = ["cty123"]
 edition = "2021"
 
