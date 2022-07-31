@@ -123,9 +123,10 @@ impl TcpHandler {
     async fn handle_direct_stream<T: AsyncRead + AsyncWrite + Unpin + Send>(
         &self,
         request: InboundRequest,
-        mut inbound_stream: StandardTcpStream<T>,
+        inbound_stream: StandardTcpStream<T>,
     ) -> io::Result<()> {
-        let (proxy_protocol, transport_protocol) = (request.proxy_protocol, request.transport_protocol);
+        let (proxy_protocol, transport_protocol) =
+            (request.proxy_protocol, request.transport_protocol);
 
         // Extract the destination port and address from the proxy request
         let addr: SocketAddr = request.addr_port.into();
@@ -136,7 +137,7 @@ impl TcpHandler {
                 match transport_protocol {
                     TransportProtocol::TCP => {
                         // Connect to remote server from the proxy request
-                        let mut outbound_stream = match TcpStream::connect(addr).await {
+                        let outbound_stream = match TcpStream::connect(addr).await {
                             Ok(stream) => stream,
                             Err(e) => {
                                 return Err(Error::new(
@@ -146,9 +147,17 @@ impl TcpHandler {
                             }
                         };
 
+                        let (mut client_reader, mut client_writer) =
+                            tokio::io::split(inbound_stream);
+                        let (mut server_reader, mut server_writer) =
+                            tokio::io::split(outbound_stream);
+
                         // Obtain reader and writer for inbound and outbound streams
-                        tokio::io::copy_bidirectional(&mut inbound_stream, &mut outbound_stream)
-                            .await?;
+                        tokio::select!(
+                            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+                            _ = tokio::io::copy(&mut server_reader, &mut client_writer) => ()
+
+                        );
                     }
                     TransportProtocol::UDP => {
                         // Establish UDP connection to remote host
@@ -232,7 +241,7 @@ impl TcpHandler {
     async fn handle_tcp_stream<T: AsyncRead + AsyncWrite + Unpin + Send>(
         &self,
         request: InboundRequest,
-        mut inbound_stream: StandardTcpStream<T>,
+        inbound_stream: StandardTcpStream<T>,
     ) -> io::Result<()> {
         // Establish the initial connection with remote server
         let connection = match self.destination {
@@ -272,9 +281,16 @@ impl TcpHandler {
 
                 match request.transport_protocol {
                     TransportProtocol::TCP => {
+                        let (mut client_reader, mut client_writer) =
+                            tokio::io::split(inbound_stream);
+                        let (mut server_reader, mut server_writer) =
+                            tokio::io::split(outbound_stream);
+
                         // Obtain reader and writer for inbound and outbound streams
-                        tokio::io::copy_bidirectional(&mut inbound_stream, &mut outbound_stream)
-                            .await?;
+                        tokio::select!(
+                            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+                            _ = tokio::io::copy(&mut server_reader, &mut client_writer) => ()
+                        );
                     }
                     TransportProtocol::UDP => {
                         // Setup the reader and writer for both the client and server so that we can transport the data

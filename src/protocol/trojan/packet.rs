@@ -309,8 +309,6 @@ pub async fn packet_stream_client_tcp<R: AsyncRead + Unpin, W: Sink<TrojanUdpPac
             }
         };
 
-        warn!("buf length: {}", buf.len());
-
         match packet_writer
             .send(TrojanUdpPacket {
                 atype: Atype::IPv4,
