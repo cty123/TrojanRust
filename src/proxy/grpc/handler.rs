@@ -1,5 +1,4 @@
 use crate::protocol::common::addr::IpAddress;
-use crate::protocol::trojan::packet::TrojanUdpPacketCodec;
 use crate::protocol::trojan::{self, CRLF};
 use crate::{
     protocol::common::request::InboundRequest,
@@ -41,53 +40,54 @@ impl GrpcHandler {
         client_writer: Sender<Result<Hunk, Status>>,
         request: InboundRequest,
     ) -> io::Result<()> {
-        match self.protocol {
-            SupportedProtocols::TROJAN => {
-                return match request.command {
-                    crate::protocol::common::command::Command::Connect => {
-                        let ip_port: SocketAddr = request.addr_port.into();
+        // match self.protocol {
+        //     SupportedProtocols::TROJAN => {
+        //         return match request.command {
+        //             crate::protocol::common::command::Command::Connect => {
+        //                 let ip_port: SocketAddr = request.addr_port.into();
 
-                        // Establish connection to remote server as specified by proxy request
-                        let (mut server_reader, mut server_writer) = match TcpStream::connect(ip_port).await
-                        {
-                            Ok(stream) => tokio::io::split(stream),
-                            Err(e) => return Err(e),
-                        };
+        //                 // Establish connection to remote server as specified by proxy request
+        //                 let (mut server_reader, mut server_writer) = match TcpStream::connect(ip_port).await
+        //                 {
+        //                     Ok(stream) => tokio::io::split(stream),
+        //                     Err(e) => return Err(e),
+        //                 };
 
-                        // Spawn two concurrent coroutines to transport the data between client and server
-                        tokio::select!(
-                            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
-                            _ = write_back_tcp_traffic(&mut server_reader, client_writer) => (),
-                        );
+        //                 // Spawn two concurrent coroutines to transport the data between client and server
+        //                 tokio::select!(
+        //                     _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+        //                     _ = write_back_tcp_traffic(&mut server_reader, client_writer) => (),
+        //                 );
 
-                        Ok(())
-                    }
-                    crate::protocol::common::command::Command::Udp => {
-                        // Establish UDP connection to remote host
-                        let socket = UdpSocket::bind("0.0.0.0:0").await?;
+        //                 Ok(())
+        //             }
+        //             crate::protocol::common::command::Command::Udp => {
+        //                 // Establish UDP connection to remote host
+        //                 let socket = UdpSocket::bind("0.0.0.0:0").await?;
 
-                        // Setup the reader and writer for both the client and server so that we can transport the data
-                        let client_reader =
-                            FramedRead::new(client_reader, TrojanUdpPacketCodec::new());
+        //                 // Setup the reader and writer for both the client and server so that we can transport the data
+        //                 let client_reader =
+        //                     FramedRead::new(client_reader, TrojanUdpPacketCodec::new());
 
-                        tokio::select!(
-                            _ = trojan::packet::packet_stream_client_udp(client_reader, &socket) => (),
-                            _ = write_back_udp_traffic(client_writer, &socket, request) => ()
-                        );
+        //                 tokio::select!(
+        //                     _ = trojan::packet::packet_stream_client_udp(client_reader, &socket) => (),
+        //                     _ = write_back_udp_traffic(client_writer, &socket, request) => ()
+        //                 );
 
-                        Ok(())
-                    }
-                    // Trojan only supports 2 types of commands unlike SOCKS
-                    // * CONNECT X'01'
-                    // * UDP ASSOCIATE X'03'
-                    crate::protocol::common::command::Command::Bind => Err(Error::new(
-                        ErrorKind::Unsupported,
-                        "Bind command is not supported in Trojan",
-                    )),
-                };
-            }
-            _ => return Err(Error::new(ErrorKind::Unsupported, "GrpcHandler only supports Trojan for now")),
-        }
+        //                 Ok(())
+        //             }
+        //             // Trojan only supports 2 types of commands unlike SOCKS
+        //             // * CONNECT X'01'
+        //             // * UDP ASSOCIATE X'03'
+        //             crate::protocol::common::command::Command::Bind => Err(Error::new(
+        //                 ErrorKind::Unsupported,
+        //                 "Bind command is not supported in Trojan",
+        //             )),
+        //         };
+        //     }
+        //     _ => return Err(Error::new(ErrorKind::Unsupported, "GrpcHandler only supports Trojan for now")),
+        // }
+        todo!()
     }
 }
 

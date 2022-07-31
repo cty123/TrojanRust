@@ -5,12 +5,14 @@ use crate::protocol::common::stream::StandardTcpStream;
 use crate::protocol::socks5;
 use crate::protocol::trojan;
 use crate::proxy::base::SupportedProtocols;
+
 use once_cell::sync::OnceCell;
 use sha2::{Digest, Sha224};
 use std::io::{Error, ErrorKind, Result};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsAcceptor;
 
+/// Static cell for storing the TCP acceptor with static lifetime to avoid use of Arc.
 static TCP_ACCEPTOR: OnceCell<TcpAcceptor> = OnceCell::new();
 
 /// Acceptor handles incomming connection by escalating them to application level data stream based on

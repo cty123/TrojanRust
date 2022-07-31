@@ -1,10 +1,11 @@
-use crate::protocol::common::addr::{IpAddress, IPV4_SIZE, IPV6_SIZE};
+use crate::protocol::common::addr::{IpAddress, IPV4_SIZE, IPV6_SIZE, IpAddrPort};
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 use crate::protocol::trojan::base::{Request, HEX_SIZE};
+use crate::protocol::trojan::packet::TrojanUdpPacketHeader;
 
-use std::io::Result;
 use bytes::Bytes;
+use std::io::Result;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 pub async fn parse<T: AsyncRead + Unpin>(stream: &mut T) -> Result<Request> {
@@ -58,18 +59,14 @@ pub async fn parse<T: AsyncRead + Unpin>(stream: &mut T) -> Result<Request> {
     ))
 }
 
-pub async fn parse_udp<T: AsyncRead + Unpin>(reader: &mut T) -> Result<usize> {
+pub async fn parse_udp<T: AsyncRead + Unpin>(reader: &mut T) -> Result<TrojanUdpPacketHeader> {
     // Read address type
-    let atype = reader.read_u8().await?;
+    let atype = Atype::from(reader.read_u8().await?)?;
 
     // Read the address type
-    match Atype::from(atype)? {
-        Atype::IPv4 => {
-            reader.read_u32().await?;
-        }
-        Atype::IPv6 => {
-            reader.read_u128().await?;
-        }
+    let addr = match atype {
+        Atype::IPv4 => IpAddress::from_u32(reader.read_u32().await?),
+        Atype::IPv6 => IpAddress::from_u128(reader.read_u128().await?),
         Atype::DomainName => {
             // Get payload size
             let size = reader.read_u8().await? as usize;
@@ -77,13 +74,18 @@ pub async fn parse_udp<T: AsyncRead + Unpin>(reader: &mut T) -> Result<usize> {
 
             // Read data into buffer
             reader.read_exact(&mut buf).await?;
+            IpAddress::from_bytes(Bytes::from(buf))
         }
     };
 
     // Read port, payload length and CRLF
-    let _port = reader.read_u16().await?;
+    let port = reader.read_u16().await?;
     let length = reader.read_u16().await?;
     reader.read_u16().await?;
 
-    Ok(length as usize)
+    Ok(TrojanUdpPacketHeader {
+        atype,
+        dest: IpAddrPort::new(addr, port).into(),
+        payload_size: length as usize
+    })
 }

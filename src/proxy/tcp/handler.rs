@@ -1,9 +1,10 @@
 use crate::config::base::{OutboundConfig, OutboundMode};
 use crate::config::tls::{make_client_config, NoCertificateVerification};
+use crate::protocol::common::addr::IpAddrPort;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::protocol::common::stream::StandardTcpStream;
-use crate::protocol::trojan::packet::TrojanUdpPacket;
-use crate::protocol::trojan::{self, handshake, packet::TrojanUdpPacketCodec, HEX_SIZE};
+use crate::protocol::trojan::packet::TrojanUdpPacketHeader;
+use crate::protocol::trojan::{self, handshake, HEX_SIZE};
 use crate::proxy::base::SupportedProtocols;
 use crate::transport::grpc_stream::{GrpcDataReaderStream, GrpcHunkRequestStream};
 use crate::transport::grpc_transport::grpc_service_client::GrpcServiceClient;
@@ -14,7 +15,6 @@ use log::info;
 use once_cell::sync::OnceCell;
 use rustls::{ClientConfig, ServerName};
 use sha2::{Digest, Sha224};
-use sluice::pipe;
 use std::io::{self, Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -128,14 +128,14 @@ impl TcpHandler {
         let (proxy_protocol, transport_protocol) =
             (request.proxy_protocol, request.transport_protocol);
 
-        // Extract the destination port and address from the proxy request
-        let addr: SocketAddr = request.addr_port.into();
-
         // Based on the protocol in the request body, decrypt the payload respectively
         match proxy_protocol {
             SupportedProtocols::TROJAN => {
                 match transport_protocol {
                     TransportProtocol::TCP => {
+                        // Extract the destination port and address from the proxy request
+                        let addr: SocketAddr = request.addr_port.into();
+
                         // Connect to remote server from the proxy request
                         let outbound_stream = match TcpStream::connect(addr).await {
                             Ok(stream) => stream,
@@ -163,13 +163,12 @@ impl TcpHandler {
                         // Establish UDP connection to remote host
                         let socket = UdpSocket::bind("0.0.0.0:0").await?;
 
-                        // Setup the reader and writer for both the client and server so that we can transport the data
-                        let (sink, stream) =
-                            Framed::new(inbound_stream, TrojanUdpPacketCodec::new()).split();
+                        let (client_reader, client_writer) =
+                            tokio::io::split(inbound_stream);
 
                         tokio::select!(
-                            _ = trojan::packet::packet_stream_client_udp(stream, &socket) => (),
-                            _ = trojan::packet::packet_stream_server_udp(&socket, sink) => ()
+                            _ = trojan::packet::copy_client_reader_to_udp_socket(client_reader, &socket) => (),
+                            _ = trojan::packet::copy_udp_socket_to_client_writer(&socket, client_writer, request.addr_port) => ()
                         );
                     }
                 };
@@ -293,14 +292,13 @@ impl TcpHandler {
                         );
                     }
                     TransportProtocol::UDP => {
-                        // Setup the reader and writer for both the client and server so that we can transport the data
-                        let (sink, stream) =
-                            Framed::new(inbound_stream, TrojanUdpPacketCodec::new()).split();
+                        let (client_reader, client_writer) =
+                            tokio::io::split(inbound_stream);
                         let (server_reader, server_writer) = tokio::io::split(outbound_stream);
 
                         tokio::select!(
-                            _ = trojan::packet::packet_stream_server_tcp(stream, server_writer) => (),
-                            _ = trojan::packet::packet_stream_client_tcp(server_reader, sink, request) => (),
+                            _ = trojan::packet::copy_client_reader_to_udp_server_writer(client_reader, server_writer, request) => (),
+                            _ = trojan::packet::copy_udp_server_reader_to_client_writer(server_reader, client_writer) => (),
                         );
                     }
                 }
@@ -322,142 +320,143 @@ impl TcpHandler {
         request: InboundRequest,
         inbound_stream: StandardTcpStream<T>,
     ) -> io::Result<()> {
-        // Remote GrpcService can not be None, otherwise we have no idea how to handle the proxy request
-        if self.destination == None {
-            return Err(Error::new(
-                ErrorKind::Unsupported,
-                "Destination can not be null",
-            ));
-        }
+        // // Remote GrpcService can not be None, otherwise we have no idea how to handle the proxy request
+        // if self.destination == None {
+        //     return Err(Error::new(
+        //         ErrorKind::Unsupported,
+        //         "Destination can not be null",
+        //     ));
+        // }
 
-        // Safety: We have checked previous for self.destination equals None condition, so that the unwrap will always work.
-        let endpoint = match self.tls {
-            None => format!("http://{}", self.destination.unwrap()),
-            Some(_) => format!("https://{}", self.destination.unwrap()),
-        };
+        // // Safety: We have checked previous for self.destination equals None condition, so that the unwrap will always work.
+        // let endpoint = match self.tls {
+        //     None => format!("http://{}", self.destination.unwrap()),
+        //     Some(_) => format!("https://{}", self.destination.unwrap()),
+        // };
 
-        // Establish GRPC connection with remote server
-        let mut connection = match GrpcServiceClient::connect(endpoint).await {
-            Ok(c) => c,
-            Err(_) => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionRefused,
-                    "Failed to connect to remote GRPC server",
-                ))
-            }
-        };
+        // // Establish GRPC connection with remote server
+        // let mut connection = match GrpcServiceClient::connect(endpoint).await {
+        //     Ok(c) => c,
+        //     Err(_) => {
+        //         return Err(Error::new(
+        //             ErrorKind::ConnectionRefused,
+        //             "Failed to connect to remote GRPC server",
+        //         ))
+        //     }
+        // };
 
-        // Create memory pipe
-        let (rx, mut server_writer) = match pipe::pipe() {
-            (reader, writer) => (reader.compat(), writer.compat_write()),
-        };
-        let request_stream = GrpcHunkRequestStream::new(rx);
+        // // Create memory pipe
+        // let (rx, mut server_writer) = match pipe::pipe() {
+        //     (reader, writer) => (reader.compat(), writer.compat_write()),
+        // };
+        // let request_stream = GrpcHunkRequestStream::new(rx);
 
-        // Connect to remote server
-        let server_reader = match connection.tun(request_stream).await {
-            Ok(c) => c.into_inner(),
-            Err(_) => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionRefused,
-                    "failed to write request data",
-                ))
-            }
-        };
+        // // Connect to remote server
+        // let server_reader = match connection.tun(request_stream).await {
+        //     Ok(c) => c.into_inner(),
+        //     Err(_) => {
+        //         return Err(Error::new(
+        //             ErrorKind::ConnectionRefused,
+        //             "failed to write request data",
+        //         ))
+        //     }
+        // };
 
-        // Handshake to send the Trojan proxy request
-        if let Err(e) = handshake(&mut server_writer, &request, &self.secret).await {
-            return Err(e);
-        }
+        // // Handshake to send the Trojan proxy request
+        // if let Err(e) = handshake(&mut server_writer, &request, &self.secret).await {
+        //     return Err(e);
+        // }
 
-        // Dispatch the request based on the proxy command
-        match request.command {
-            crate::protocol::common::command::Command::Connect => {
-                let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);
+        // // Dispatch the request based on the proxy command
+        // match request.command {
+        //     crate::protocol::common::command::Command::Connect => {
+        //         let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);
 
-                tokio::select!(
-                    _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
-                    _ = transport_grpc_server(server_reader, &mut client_writer) => ()
-                );
-            }
-            crate::protocol::common::command::Command::Udp => {
-                let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);
-                let mut server_reader_stream = FramedRead::new(
-                    GrpcDataReaderStream::from_reader(server_reader),
-                    TrojanUdpPacketCodec::new(),
-                );
+        //         tokio::select!(
+        //             _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+        //             _ = transport_grpc_server(server_reader, &mut client_writer) => ()
+        //         );
+        //     }
+        //     crate::protocol::common::command::Command::Udp => {
+        //         let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);
+        //         let mut server_reader_stream = FramedRead::new(
+        //             GrpcDataReaderStream::from_reader(server_reader),
+        //             TrojanUdpPacketCodec::new(),
+        //         );
 
-                tokio::select!(
-                    _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
-                    _ = transport_grpc_client(&mut server_reader_stream, &mut client_writer) => ()
-                );
-            }
-            crate::protocol::common::command::Command::Bind => {
-                return Err(Error::new(
-                    ErrorKind::Unsupported,
-                    "Bind command is not supported in Trojan protocol",
-                ))
-            }
-        }
+        //         tokio::select!(
+        //             _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+        //             _ = transport_grpc_client(&mut server_reader_stream, &mut client_writer) => ()
+        //         );
+        //     }
+        //     crate::protocol::common::command::Command::Bind => {
+        //         return Err(Error::new(
+        //             ErrorKind::Unsupported,
+        //             "Bind command is not supported in Trojan protocol",
+        //         ))
+        //     }
+        // }
 
-        Ok(())
+        // Ok(())
+        todo!()
     }
 }
 
-pub async fn transport_grpc_server<
-    R: Stream<Item = Result<Hunk, Status>> + Unpin,
-    W: AsyncWrite + Unpin,
->(
-    mut server_reader: R,
-    mut client_writer: W,
-) -> io::Result<()> {
-    loop {
-        let payload = match server_reader.next().await {
-            Some(res) => match res {
-                Ok(h) => h,
-                Err(_) => {
-                    return Err(Error::new(
-                        ErrorKind::ConnectionReset,
-                        "Connection interrupted",
-                    ))
-                }
-            },
-            None => return Err(Error::new(ErrorKind::BrokenPipe, "Read EOF")),
-        };
+// pub async fn transport_grpc_server<
+//     R: Stream<Item = Result<Hunk, Status>> + Unpin,
+//     W: AsyncWrite + Unpin,
+// >(
+//     mut server_reader: R,
+//     mut client_writer: W,
+// ) -> io::Result<()> {
+//     loop {
+//         let payload = match server_reader.next().await {
+//             Some(res) => match res {
+//                 Ok(h) => h,
+//                 Err(_) => {
+//                     return Err(Error::new(
+//                         ErrorKind::ConnectionReset,
+//                         "Connection interrupted",
+//                     ))
+//                 }
+//             },
+//             None => return Err(Error::new(ErrorKind::BrokenPipe, "Read EOF")),
+//         };
 
-        if let Err(e) = client_writer.write(&payload.data).await {
-            return Err(e);
-        }
-    }
-}
+//         if let Err(e) = client_writer.write(&payload.data).await {
+//             return Err(e);
+//         }
+//     }
+// }
 
-pub async fn transport_grpc_client<
-    R: Stream<Item = Result<TrojanUdpPacket, Error>> + Unpin,
-    W: AsyncWrite + Unpin,
->(
-    mut server_reader: R,
-    mut client_writer: W,
-) -> io::Result<()> {
-    loop {
-        let packet = match server_reader.next().await {
-            Some(res) => match res {
-                Ok(p) => p,
-                Err(_) => {
-                    return Err(Error::new(
-                        ErrorKind::ConnectionReset,
-                        "Connection interrupted",
-                    ))
-                }
-            },
-            None => {
-                return Err(Error::new(
-                    ErrorKind::ConnectionReset,
-                    "Connection interrupted",
-                ))
-            }
-        };
+// pub async fn transport_grpc_client<
+//     R: Stream<Item = Result<TrojanUdpPacket, Error>> + Unpin,
+//     W: AsyncWrite + Unpin,
+// >(
+//     mut server_reader: R,
+//     mut client_writer: W,
+// ) -> io::Result<()> {
+//     loop {
+//         let packet = match server_reader.next().await {
+//             Some(res) => match res {
+//                 Ok(p) => p,
+//                 Err(_) => {
+//                     return Err(Error::new(
+//                         ErrorKind::ConnectionReset,
+//                         "Connection interrupted",
+//                     ))
+//                 }
+//             },
+//             None => {
+//                 return Err(Error::new(
+//                     ErrorKind::ConnectionReset,
+//                     "Connection interrupted",
+//                 ))
+//             }
+//         };
 
-        if let Err(e) = client_writer.write(&packet.payload).await {
-            return Err(e);
-        }
-    }
-}
+//         if let Err(e) = client_writer.write(&packet.payload).await {
+//             return Err(e);
+//         }
+//     }
+// }

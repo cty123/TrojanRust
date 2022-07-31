@@ -6,7 +6,6 @@ pub mod packet;
 pub use self::base::CRLF;
 pub use self::base::HEX_SIZE;
 pub use self::parser::parse;
-pub use self::parser::parse_udp;
 
 use crate::protocol::common::addr::IpAddress;
 use crate::protocol::common::{request::InboundRequest, stream::StandardTcpStream};
