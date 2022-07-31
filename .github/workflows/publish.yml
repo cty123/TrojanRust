@@ -64,6 +64,9 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v2
 
+    - name: Setup protoc
+      uses: arduino/setup-protoc@v1.1.2
+
     - name: Rust Toolchain
       uses: actions-rs/toolchain@v1
       with:
