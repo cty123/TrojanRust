@@ -305,7 +305,7 @@ where
     loop {
         let mut buf = vec![0u8; BUF_SIZE];
 
-        let size = match server_reader.read_buf(&mut buf).await {
+        let size = match server_reader.read(&mut buf).await {
             Ok(s) => s,
             Err(e) => {
                 warn!(
