@@ -29,6 +29,8 @@ pub async fn start(
 
     // Enter server listener socket accept loop
     loop {
+        info!("Ready to accept new socket connection");
+
         let (socket, addr) = listener.accept().await?;
 
         info!("Received new connection from {}", addr);

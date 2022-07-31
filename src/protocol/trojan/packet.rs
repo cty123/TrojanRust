@@ -3,12 +3,16 @@ use crate::protocol::common::atype::Atype;
 use crate::protocol::common::request::InboundRequest;
 use crate::protocol::trojan::base::CRLF;
 use crate::protocol::trojan::parser::parse_udp;
+use crate::transport::grpc_stream::GrpcDataReaderStream;
+use crate::transport::grpc_transport::Hunk;
 
 use log::debug;
-use std::io;
+use std::io::{self, Cursor, Error, ErrorKind};
 use std::net::{IpAddr, SocketAddr};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
+use tokio::sync::mpsc::Sender;
+use tonic::Streaming;
 
 /// Define the size of the buffer used to transport the data back and forth
 const BUF_SIZE: usize = 4096;
@@ -23,11 +27,10 @@ pub struct TrojanUdpPacketHeader {
 }
 
 pub async fn copy_client_reader_to_udp_socket<R: AsyncRead + Unpin>(
-    client_reader: R,
+    mut client_reader: R,
     server_writer: &UdpSocket,
 ) -> io::Result<()> {
     let mut read_buf = vec![0u8; BUF_SIZE];
-    let mut client_reader = BufReader::new(client_reader);
 
     loop {
         let header = parse_udp(&mut client_reader).await?;
@@ -61,11 +64,10 @@ pub async fn copy_client_reader_to_udp_socket<R: AsyncRead + Unpin>(
 
 pub async fn copy_udp_socket_to_client_writer<W: AsyncWrite + Unpin>(
     server_reader: &UdpSocket,
-    client_writer: W,
+    mut client_writer: W,
     addr: IpAddrPort,
 ) -> io::Result<()> {
     let mut read_buf = vec![0u8; BUF_SIZE];
-    let mut client_writer = BufWriter::new(client_writer);
     let (addr, port) = (addr.ip, addr.port);
 
     loop {
@@ -102,11 +104,10 @@ pub async fn copy_client_reader_to_udp_server_writer<
     W: AsyncWrite + Unpin,
 >(
     mut client_reader: R,
-    server_writer: W,
+    mut server_writer: W,
     request: InboundRequest,
 ) -> io::Result<()> {
     let mut read_buf = vec![0u8; BUF_SIZE];
-    let mut server_writer = BufWriter::new(server_writer);
 
     loop {
         let size = client_reader.read(&mut read_buf).await?;
@@ -140,11 +141,10 @@ pub async fn copy_udp_server_reader_to_client_writer<
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 >(
-    server_reader: R,
+    mut server_reader: R,
     mut client_writer: W,
 ) -> io::Result<()> {
     let mut read_buf = vec![0u8; BUF_SIZE];
-    let mut server_reader = BufReader::new(server_reader);
 
     loop {
         let header = parse_udp(&mut server_reader).await?;
@@ -159,179 +159,74 @@ pub async fn copy_udp_server_reader_to_client_writer<
     }
 }
 
-// /// Helper function to transport data from UDP packet stream to tokio UDP socket
-// pub async fn packet_stream_client_udp<R: Stream<Item = Result<TrojanUdpPacket, Error>> + Unpin>(
-//     mut packet_reader: R,
-//     socket: &UdpSocket,
-// ) {
-//     loop {
-//         // Read next packet off the client trojan stream
-//         let packet = match packet_reader.next().await {
-//             None => continue,
-//             Some(res) => {
-//                 match res {
-//                     Ok(p) => p,
-//                     Err(e) => {
-//                         warn!("Encountered error while reading the trojan UDP packets from client: {}", e);
-//                         return;
-//                     }
-//                 }
-//             }
-//         };
+pub async fn copy_client_reader_to_server_grpc_writer<R: AsyncRead + Unpin>(
+    mut client_reader: R,
+    server_writer: Sender<Hunk>,
+    request: InboundRequest,
+) -> io::Result<()> {
+    loop {
+        let mut read_buf = vec![0u8; BUF_SIZE];
 
-//         // Forward the received packet to remote
-//         match socket
-//             .send_to(&packet.payload, (packet.dest.to_string(), packet.port))
-//             .await
-//         {
-//             Ok(_) => (),
-//             Err(e) => {
-//                 warn!(
-//                     "Encountered error while sending the UDP packets to remote server: {}",
-//                     e
-//                 );
-//                 return;
-//             }
-//         }
-//     }
-// }
+        let n = client_reader.read(&mut read_buf).await?;
 
-// /// Helper function to transport data from tokio UDP socket to Trojan UDP packet sink.
-// pub async fn packet_stream_server_udp<W: Sink<TrojanUdpPacket> + Unpin>(
-//     socket: &UdpSocket,
-//     mut packet_writer: W,
-// ) where
-//     <W as futures::Sink<TrojanUdpPacket>>::Error: std::fmt::Display,
-// {
-//     loop {
-//         let mut buf = vec![0u8; BUF_SIZE];
+        read_buf.truncate(n);
 
-//         let (size, dest) = match socket.recv_from(&mut buf).await {
-//             Ok((s, d)) => (s, d),
-//             Err(e) => {
-//                 warn!(
-//                     "Encountered error while reading the UDP packets from remote server: {}",
-//                     e
-//                 );
-//                 return;
-//             }
-//         };
+        let mut cursor = Cursor::new(vec![0u8; 512]);
 
-//         buf.truncate(size);
+        cursor.write_u8(request.atype as u8).await?;
 
-//         match packet_writer
-//             .send(TrojanUdpPacket {
-//                 atype: Atype::IPv4,
-//                 dest: IpAddress::IpAddr(dest.ip()),
-//                 port: dest.port(),
-//                 payload: Bytes::from(buf),
-//             })
-//             .await
-//         {
-//             Ok(_) => (),
-//             Err(e) => {
-//                 warn!(
-//                     "Encountered error while sending the trojan UDP packets to client: {}",
-//                     e
-//                 );
-//                 return;
-//             }
-//         }
-//     }
-// }
+        match request.addr_port.ip {
+            IpAddress::IpAddr(IpAddr::V4(addr)) => {
+                cursor.write_all(&addr.octets()).await?;
+            }
+            IpAddress::IpAddr(IpAddr::V6(addr)) => {
+                cursor.write_all(&addr.octets()).await?;
+            }
+            IpAddress::Domain(ref domain) => {
+                cursor.write_u8(domain.as_bytes().len() as u8).await?;
+                cursor.write_all(domain.as_bytes()).await?;
+            }
+        }
 
-// /// Helper function to transport Trojan UDP packet stream to the destination AsyncWrite stream.
-// pub async fn packet_stream_server_tcp<
-//     R: Stream<Item = Result<TrojanUdpPacket, Error>> + Unpin,
-//     W: AsyncWrite + Unpin,
-// >(
-//     mut packet_reader: R,
-//     mut server_writer: W,
-// ) -> io::Result<()> {
-//     loop {
-//         // Read next packet off the client trojan stream
-//         let packet = match packet_reader.next().await {
-//             None => continue,
-//             Some(res) => match res {
-//                 Ok(p) => p,
-//                 Err(e) => {
-//                     warn!(
-//                         "Encountered error while reading the trojan UDP packet from client: {}",
-//                         e
-//                     );
-//                     return Err(Error::new(
-//                         ErrorKind::ConnectionReset,
-//                         "Failed to read UDP packet from client",
-//                     ));
-//                 }
-//             },
-//         };
+        cursor.write_u16(request.addr_port.port).await?;
+        cursor.write_u16(n as u16).await?;
+        cursor.write_u16(CRLF).await?;
 
-//         // Forward the received packet to remote
-//         match server_writer.write_all(&packet.payload).await {
-//             Ok(_) => (),
-//             Err(e) => {
-//                 warn!(
-//                     "Encountered error while sending the trojan UDP packet payload to remote server: {}",
-//                     e
-//                 );
-//                 return Err(Error::new(
-//                     ErrorKind::ConnectionRefused,
-//                     "Failed to send UDP packet to server",
-//                 ));
-//             }
-//         }
-//     }
-// }
+        let (pos, mut header) = (cursor.position(), cursor.into_inner());
+        header.truncate(pos as usize);
 
-// /// Helper function to transport proxy response data from an AsyncRead stream to the client TrojanUdpPacket sink.
-// pub async fn packet_stream_client_tcp<R: AsyncRead + Unpin, W: Sink<TrojanUdpPacket> + Unpin>(
-//     mut server_reader: R,
-//     mut packet_writer: W,
-//     request: InboundRequest,
-// ) -> io::Result<()>
-// where
-//     <W as futures::Sink<TrojanUdpPacket>>::Error: std::fmt::Display,
-// {
-//     loop {
-//         let mut buf = vec![0u8; BUF_SIZE];
+        if let Err(_) = server_writer.send(Hunk { data: header }).await {
+            return Err(Error::new(
+                ErrorKind::ConnectionReset,
+                "Failed to send GRPC packet",
+            ));
+        }
 
-//         let size = match server_reader.read(&mut buf).await {
-//             Ok(s) => s,
-//             Err(e) => {
-//                 warn!(
-//                     "Encountered error while reading the UDP packets from remote server: {}",
-//                     e
-//                 );
-//                 return Err(Error::new(
-//                     ErrorKind::ConnectionReset,
-//                     "Failed to read UDP packet from server",
-//                 ));
-//             }
-//         };
+        if let Err(_) = server_writer.send(Hunk { data: read_buf }).await {
+            return Err(Error::new(
+                ErrorKind::ConnectionReset,
+                "Failed to send GRPC packet",
+            ));
+        }
+    }
+}
 
-//         buf.truncate(size);
+pub async fn copy_server_grpc_reader_to_client_writer<W: AsyncWrite + Unpin>(
+    server_reader: Streaming<Hunk>,
+    mut client_writer: W,
+) -> io::Result<()> {
+    let mut server_reader = GrpcDataReaderStream::from_reader(server_reader);
+    let mut read_buf = vec![0u8; BUF_SIZE];
 
-//         match packet_writer
-//             .send(TrojanUdpPacket {
-//                 atype: Atype::IPv4,
-//                 dest: request.addr_port.ip.clone(),
-//                 port: request.addr_port.port,
-//                 payload: Bytes::from(buf),
-//             })
-//             .await
-//         {
-//             Ok(_) => (),
-//             Err(e) => {
-//                 warn!(
-//                     "Encountered error while sending the trojan UDP packets to client: {}",
-//                     e
-//                 );
-//                 return Err(Error::new(
-//                     ErrorKind::ConnectionRefused,
-//                     "Failed to write trojan UDP packet to client",
-//                 ));
-//             }
-//         }
-//     }
-// }
+    loop {
+        let header = parse_udp(&mut server_reader).await?;
+
+        server_reader
+            .read_exact(&mut read_buf[..header.payload_size])
+            .await?;
+
+        client_writer
+            .write_all(&read_buf[..header.payload_size])
+            .await?;
+    }
+}
