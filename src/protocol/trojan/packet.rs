@@ -3,7 +3,7 @@ use crate::protocol::common::atype::Atype;
 use crate::protocol::common::request::InboundRequest;
 use crate::protocol::trojan::base::CRLF;
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes};
 use futures::{Sink, SinkExt, Stream};
 use log::warn;
 use std::io::{self, Error, ErrorKind};
