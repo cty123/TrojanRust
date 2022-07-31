@@ -11,7 +11,7 @@ use trojan_rust::proxy::tcp;
 
 lazy_static! {
     static ref ARGS: ArgMatches = Command::new("Trojan Rust")
-        .version("0.6.5")
+        .version("0.7.0")
         .author("cty123")
         .about("Trojan Rust is a rust implementation of the trojan protocol to circumvent GFW")
         .arg(
