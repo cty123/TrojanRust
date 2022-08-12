@@ -55,6 +55,7 @@ Quick short script for your convenience,
         "address": "0.0.0.0",
         "secret": "123123",
         "port": 8081,
+        "mode": "TCP",
         "tls": {
             "cert_path": "./cert.pem",
             "key_path": "./key.pem"
@@ -79,6 +80,7 @@ Quick short script for your convenience,
         "address": "0.0.0.0",
         "port": 8082,
         "secret": "123123",
+        "mode": "TCP",
         "tls": {
             "host_name": "example.com",
             "allow_insecure": true
@@ -98,7 +100,7 @@ Just add GRPC to transport under inbound or outbound
             "cert_path": "./cert.pem",
             "key_path": "./key.pem"
         },
-        "transport": "GRPC"
+        "mode": "GRPC"
     },
     "outbound": {
         "protocol": "DIRECT"
