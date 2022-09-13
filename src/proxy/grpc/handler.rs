@@ -43,7 +43,10 @@ impl GrpcHandler {
             SupportedProtocols::TROJAN => {
                 return match request.command {
                     crate::protocol::common::command::Command::Connect => {
-                        let ip_port: SocketAddr = request.addr_port.into();
+                        let ip_port: SocketAddr = match request.addr_port.into() {
+                            Ok(sa) => sa,
+                            Err(e) => return Err(e),
+                        };
 
                         // Establish connection to remote server as specified by proxy request
                         let (mut server_reader, mut server_writer) =

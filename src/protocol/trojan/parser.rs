@@ -1,4 +1,4 @@
-use crate::protocol::common::addr::{IpAddress, IPV4_SIZE, IPV6_SIZE, IpAddrPort};
+use crate::protocol::common::addr::{IpAddrPort, IpAddress, IPV4_SIZE, IPV6_SIZE};
 use crate::protocol::common::atype::Atype;
 use crate::protocol::common::command::Command;
 use crate::protocol::trojan::base::{Request, HEX_SIZE};
@@ -83,9 +83,15 @@ pub async fn parse_udp<T: AsyncRead + Unpin>(reader: &mut T) -> Result<TrojanUdp
     let length = reader.read_u16().await?;
     reader.read_u16().await?;
 
+    // Resolve DNS name if the requested address is DNS name.
+    let dest = match IpAddrPort::new(addr, port).into() {
+        Ok(d) => d,
+        Err(e) => return Err(e),
+    };
+
     Ok(TrojanUdpPacketHeader {
         atype,
-        dest: IpAddrPort::new(addr, port).into(),
-        payload_size: length as usize
+        dest,
+        payload_size: length as usize,
     })
 }

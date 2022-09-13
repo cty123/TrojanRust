@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use std::fmt::{self};
+use std::io::{Error, ErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 
 pub const IPV4_SIZE: usize = 4;
@@ -8,7 +9,6 @@ pub const IPV6_SIZE: usize = 16;
 /// DomainName is a vector of bytes whose length can go up to 255. This is not the most efficient way of
 /// storing DomainName, should consider using stack memory to avoid calling malloc and free repeatedly.
 /// This may be altered after we perform a thourough benchmark to determine the tradeoffs between slice and Vec.
-#[derive(Clone)]
 pub struct DomainName {
     inner: Bytes,
 }
@@ -16,7 +16,6 @@ pub struct DomainName {
 /// Wrap around std::net::IpAddr to create a parent enum for all kinds of IpAddresses used in Trojan.
 /// Apart from the basic IPv4 and IPv6 types provided by standard library, DomainName is commonly used
 /// for proxy protocols, so we need to extend that.
-#[derive(Clone)]
 pub enum IpAddress {
     IpAddr(IpAddr),
     Domain(DomainName),
@@ -29,6 +28,7 @@ pub struct IpAddrPort {
     pub port: u16,
 }
 
+/// Expose constructor for IpAddrPort for the easy of initialization
 impl IpAddrPort {
     #[inline]
     pub fn new(ip: IpAddress, port: u16) -> Self {
@@ -36,24 +36,32 @@ impl IpAddrPort {
     }
 }
 
-impl Into<SocketAddr> for IpAddrPort {
-    #[inline]
-    fn into(self) -> SocketAddr {
+/// IpAddrPort is essentially SocketAddr, except we allow DomainName which needs to be resolved by DNS query.
+/// TODO: Come up with a better way of resolving DNS names by adding builtin DNS cache in memory or make pluggable modules.
+impl Into<std::io::Result<SocketAddr>> for IpAddrPort {
+    fn into(self) -> std::io::Result<SocketAddr> {
         match self.ip {
-            IpAddress::IpAddr(addr) => SocketAddr::new(addr, self.port),
+            IpAddress::IpAddr(addr) => Ok(SocketAddr::new(addr, self.port)),
             IpAddress::Domain(domain) => {
                 let name = std::str::from_utf8(&domain.inner).unwrap_or("127.0.0.1");
+                // to_socket_addrs function implicitly runs a DNS query to resolve the DomainName
                 let addrs = match (name, self.port).to_socket_addrs() {
                     Ok(a) => a,
-                    Err(e) => {
-                        panic!("Failed to resolve DNS name: {}, {}", name, e);
-                    },
+                    Err(_) => {
+                        return Err(Error::new(
+                            ErrorKind::AddrNotAvailable,
+                            "Failed to resolve DNS name",
+                        ));
+                    }
                 };
 
                 return match addrs.into_iter().nth(0) {
-                    Some(n) => n,
-                    None => panic!("No DNS result for the domain name: {}", name)
-                }
+                    Some(n) => Ok(n),
+                    None => Err(Error::new(
+                        ErrorKind::AddrNotAvailable,
+                        "Failed to resolve DNS name",
+                    )),
+                };
             }
         }
     }

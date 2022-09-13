@@ -132,7 +132,10 @@ impl TcpHandler {
                 match transport_protocol {
                     TransportProtocol::TCP => {
                         // Extract the destination port and address from the proxy request
-                        let addr: SocketAddr = request.addr_port.into();
+                        let addr: SocketAddr = match request.addr_port.into() {
+                            Ok(addr) => addr,
+                            Err(e) => return Err(e),
+                        };
 
                         // Connect to remote server from the proxy request
                         let outbound_stream = match TcpStream::connect(addr).await {
@@ -154,7 +157,6 @@ impl TcpHandler {
                         tokio::select!(
                             _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
                             _ = tokio::io::copy(&mut server_reader, &mut client_writer) => ()
-
                         );
                     }
                     TransportProtocol::UDP => {

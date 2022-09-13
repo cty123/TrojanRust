@@ -5,8 +5,8 @@ use crate::{
 };
 use futures::StreamExt;
 use quinn;
-use std::{io::Result, net::SocketAddr};
 use std::net::ToSocketAddrs;
+use std::{io::Result, net::SocketAddr};
 use tokio::net::TcpStream;
 
 pub async fn start(
@@ -52,10 +52,11 @@ pub async fn start(
             let request = parse(&mut client_reader).await.unwrap().into_request();
 
             // Connect to remote server
-            let addr_port: SocketAddr = request.addr_port.into();
-            let outbound_connection = TcpStream::connect(addr_port)
-                .await
-                .unwrap();
+            let addr_port: SocketAddr = match request.addr_port.into() {
+                Ok(addr_port) => addr_port,
+                Err(_) => return,
+            };
+            let outbound_connection = TcpStream::connect(addr_port).await.unwrap();
 
             // Transport data between client and remote server
             let (mut server_reader, mut server_writer) = tokio::io::split(outbound_connection);
