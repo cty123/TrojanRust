@@ -4,6 +4,8 @@ use crate::protocol::common::command::Command;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::proxy::base::SupportedProtocols;
 
+use constant_time_eq::constant_time_eq;
+
 use std::fmt;
 
 /// Trojan hex payload is always 56 bytes
@@ -64,11 +66,7 @@ impl Request {
 
     #[inline]
     pub fn validate(&self, secret: &[u8]) -> bool {
-        if secret.len() != self.hex.len() {
-            return false;
-        }
-
-        return secret == self.hex;
+        return constant_time_eq(secret, &self.hex);
     }
 }
 
