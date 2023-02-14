@@ -8,12 +8,13 @@ use crate::transport::grpc_transport::grpc_service_client::GrpcServiceClient;
 use crate::transport::grpc_transport::Hunk;
 
 use futures::Stream;
-use log::info;
+use log::{info, warn};
 use once_cell::sync::OnceCell;
+use quinn::Endpoint;
 use rustls::{ClientConfig, ServerName};
 use sha2::{Digest, Sha224};
 use std::io::{self, Cursor, Error, ErrorKind};
-use std::net::SocketAddr;
+use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpStream, UdpSocket};
@@ -48,7 +49,7 @@ impl TcpHandler {
             Some(cfg) => {
                 let client_config = make_client_config(&cfg);
                 Some((
-                    client_config,
+                    Arc::new(client_config),
                     ServerName::try_from(cfg.host_name.as_ref())
                         .expect("Failed to parse host name"),
                 ))
@@ -206,28 +207,44 @@ impl TcpHandler {
             .with_safe_defaults()
             .with_custom_certificate_verifier(Arc::new(NoCertificateVerification {}))
             .with_no_client_auth();
-        let mut endpoint = quinn::Endpoint::client("[::]:0".parse().unwrap()).unwrap();
+
+        // Create client
+        let mut endpoint = match Endpoint::client(SocketAddr::V6(SocketAddrV6::new(
+            Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0),
+            0,
+            0,
+            0,
+        ))) {
+            Ok(e) => e,
+            Err(e) => {
+                warn!("Failed to create local QUIC client: {}", e);
+                return Err(e);
+            }
+        };
         endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(client_crypto)));
 
         // Establish connection with remote proxy server using QUIC protocol
-        let connection = endpoint
-            .connect("127.0.0.1:8081".parse().unwrap(), "example.com")
-            .unwrap()
-            .await
-            .unwrap();
+        let connection = match endpoint.connect("127.0.0.1:8081".parse().unwrap(), "example.com") {
+            Ok(c) => c,
+            Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e)),
+        };
 
-        let quinn::NewConnection {
-            connection: conn, ..
-        } = connection;
+        let connection = match connection.await {
+            Ok(c) => c,
+            Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e)),
+        };
 
-        let (mut server_writer, mut server_reader) = conn.open_bi().await.unwrap();
+        let (mut server_writer, mut server_reader) = match connection.open_bi().await {
+            Ok((tx, rx)) => (tx, rx),
+            Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e)),
+        };
         let (mut client_reader, mut client_writer) = tokio::io::split(inbound_stream);
 
         handshake(&mut server_writer, &request, &self.secret).await?;
 
         tokio::select!(
-            _ = tokio::spawn(async move {tokio::io::copy(&mut client_reader, &mut server_writer).await}) => (),
-            _ = tokio::spawn(async move {tokio::io::copy(&mut server_reader, &mut client_writer).await}) => (),
+            _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+            _ = tokio::io::copy(&mut server_reader, &mut client_writer) => (),
         );
 
         Ok(())
@@ -255,7 +272,7 @@ impl TcpHandler {
         // Escalate the connection to TLS connection if tls config is present
         let mut outbound_stream = match &self.tls {
             Some((client_config, domain)) => {
-                let connector = TlsConnector::from(client_config.clone());
+                let connector = TlsConnector::from(Arc::clone(client_config));
                 StandardTcpStream::RustlsClient(
                     connector.connect(domain.clone(), connection).await?,
                 )

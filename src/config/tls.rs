@@ -58,7 +58,7 @@ impl ServerCertVerifier for NoCertificateVerification {
 ///     }         
 /// }
 /// ```
-pub fn make_client_config(config: &OutboundTlsConfig) -> Arc<ClientConfig> {
+pub fn make_client_config(config: &OutboundTlsConfig) -> ClientConfig {
     if config.allow_insecure {
         let mut config = ClientConfig::builder()
             .with_safe_defaults()
@@ -69,7 +69,7 @@ pub fn make_client_config(config: &OutboundTlsConfig) -> Arc<ClientConfig> {
             .dangerous()
             .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
 
-        Arc::new(config)
+        config
     } else {
         let mut root_store = RootCertStore::empty();
         root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
@@ -85,7 +85,7 @@ pub fn make_client_config(config: &OutboundTlsConfig) -> Arc<ClientConfig> {
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
-        Arc::new(config)
+        config
     }
 }
 
@@ -101,7 +101,7 @@ pub fn make_client_config(config: &OutboundTlsConfig) -> Arc<ClientConfig> {
 ///     }         
 /// }
 /// ```
-pub fn make_server_config(config: &InboundTlsConfig) -> Option<Arc<ServerConfig>> {
+pub fn make_server_config(config: &InboundTlsConfig) -> Option<ServerConfig> {
     let certificates = match load_certs(&config.cert_path) {
         Ok(certs) => certs,
         Err(_) => return None,
@@ -113,15 +113,12 @@ pub fn make_server_config(config: &InboundTlsConfig) -> Option<Arc<ServerConfig>
     };
 
     let cfg = ServerConfig::builder()
-        .with_safe_default_cipher_suites()
-        .with_safe_default_kx_groups()
-        .with_safe_default_protocol_versions()
-        .unwrap()
+        .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(certificates, key)
         .expect("bad certificate/key");
 
-    Some(Arc::new(cfg))
+    Some(cfg)
 }
 
 fn load_certs(path: &str) -> std::io::Result<Vec<Certificate>> {

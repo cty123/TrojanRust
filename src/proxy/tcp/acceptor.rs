@@ -9,6 +9,7 @@ use crate::proxy::base::SupportedProtocols;
 use once_cell::sync::OnceCell;
 use sha2::{Digest, Sha224};
 use std::io::{Error, ErrorKind, Result};
+use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsAcceptor;
 
@@ -44,7 +45,7 @@ impl TcpAcceptor {
 
         let tls_acceptor = match &inbound.tls {
             Some(tls) => match make_server_config(&tls) {
-                Some(cfg) => Some(TlsAcceptor::from(cfg)),
+                Some(cfg) => Some(TlsAcceptor::from(Arc::new(cfg))),
                 None => None,
             },
             None => None,
@@ -64,37 +65,17 @@ impl TcpAcceptor {
         &self,
         inbound_stream: T,
     ) -> Result<(InboundRequest, StandardTcpStream<T>)> {
-        match self.protocol {
-            // Socks5 with or without TLS
-            SupportedProtocols::SOCKS if self.tls_acceptor.is_some() => {
-                let tls_stream = self
-                    .tls_acceptor
-                    .as_ref()
-                    .unwrap()
-                    .accept(inbound_stream)
-                    .await?;
-                Ok(socks5::accept(StandardTcpStream::RustlsServer(tls_stream), self.port).await?)
-            }
-            SupportedProtocols::SOCKS => {
-                Ok(socks5::accept(StandardTcpStream::Plain(inbound_stream), self.port).await?)
-            }
-            // Trojan with or without TLS
-            SupportedProtocols::TROJAN if self.tls_acceptor.is_some() => {
-                let tls_stream = self
-                    .tls_acceptor
-                    .as_ref()
-                    .unwrap()
-                    .accept(inbound_stream)
-                    .await?;
+        let stream = if let Some(tls_acceptor) = self.tls_acceptor.as_ref() {
+            StandardTcpStream::RustlsServer(tls_acceptor.accept(inbound_stream).await?)
+        } else {
+            StandardTcpStream::Plain(inbound_stream)
+        };
 
-                Ok(
-                    trojan::accept(StandardTcpStream::RustlsServer(tls_stream), &self.secret)
-                        .await?,
-                )
-            }
-            SupportedProtocols::TROJAN => {
-                Ok(trojan::accept(StandardTcpStream::Plain(inbound_stream), &self.secret).await?)
-            }
+        match self.protocol {
+            // Handle SOCK5 protocol
+            SupportedProtocols::SOCKS => Ok(socks5::accept(stream, self.port).await?),
+            // Handle Trojan protocol
+            SupportedProtocols::TROJAN => Ok(trojan::accept(stream, &self.secret).await?),
             // Shutdown the connection if the protocol is currently unsupported
             _ => Err(Error::new(
                 ErrorKind::ConnectionReset,

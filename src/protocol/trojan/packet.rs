@@ -35,11 +35,6 @@ pub async fn copy_client_reader_to_udp_socket<R: AsyncRead + Unpin>(
     loop {
         let header = parse_udp(&mut client_reader).await?;
 
-        debug!(
-            "Forwarding {} bytes to {}",
-            header.payload_size, header.dest
-        );
-
         assert!(
             header.payload_size <= BUF_SIZE,
             "Payload size exceeds read buffer size"
@@ -48,6 +43,10 @@ pub async fn copy_client_reader_to_udp_socket<R: AsyncRead + Unpin>(
         let size = client_reader
             .read_exact(&mut read_buf[..header.payload_size])
             .await?;
+
+        if size == 0 {
+            return Ok(());
+        }
 
         assert!(
             size == header.payload_size,
@@ -73,6 +72,10 @@ pub async fn copy_udp_socket_to_client_writer<W: AsyncWrite + Unpin>(
     loop {
         let (size, _dest) = server_reader.recv_from(&mut read_buf).await?;
 
+        if size == 0 {
+            return Ok(());
+        }
+
         match addr {
             IpAddress::IpAddr(IpAddr::V4(addr)) => {
                 client_writer.write_u8(Atype::IPv4 as u8).await?;
@@ -96,6 +99,8 @@ pub async fn copy_udp_socket_to_client_writer<W: AsyncWrite + Unpin>(
         client_writer.write_u16(CRLF).await?;
         client_writer.write_all(&read_buf[..size]).await?;
         client_writer.flush().await?;
+
+        debug!("Write {} bytes back to the client", size);
     }
 }
 

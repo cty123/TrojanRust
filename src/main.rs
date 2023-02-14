@@ -11,7 +11,7 @@ use trojan_rust::proxy::tcp;
 
 lazy_static! {
     static ref ARGS: ArgMatches = Command::new("Trojan Rust")
-        .version("0.7.1")
+        .version("0.7.2")
         .author("cty123")
         .about("Trojan Rust is a rust implementation of the trojan protocol to circumvent GFW")
         .arg(
@@ -20,11 +20,12 @@ lazy_static! {
                 .long("config")
                 .value_name("FILE")
                 .help("Sets the config file, read ./config/config.json by default")
-                .takes_value(true),
+                .required(false)
         )
         .get_matches();
-    static ref CONFIG_PATH: &'static str =
-        ARGS.value_of("config").unwrap_or("./config/config.json");
+    static ref CONFIG_PATH: &'static str = ARGS
+        .get_one::<&'static str>("config")
+        .unwrap_or(&"./config/config.json");
     static ref CONFIG: (InboundConfig, OutboundConfig) = {
         let config = read_config(&CONFIG_PATH).expect("Error parsing the config file");
         (config.inbound, config.outbound)
