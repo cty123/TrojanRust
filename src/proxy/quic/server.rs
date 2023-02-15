@@ -8,8 +8,8 @@ use crate::{
 };
 
 use log::{info, warn};
-use quinn::{self, Endpoint, RecvStream, SendStream};
-use std::{io::Result, net::SocketAddr, sync::Arc, vec};
+use quinn::{self, Endpoint};
+use std::{io::Result, net::SocketAddr, sync::Arc};
 use std::{
     io::{Error, ErrorKind},
     net::ToSocketAddrs,
@@ -60,7 +60,6 @@ pub async fn start(
     while let Some(conn) = endpoint.accept().await {
         info!("Accepted new QUIC connection");
 
-        // Handle the new connection in a new coroutine
         tokio::spawn(async move {
             // Establish QUIC connection with handshake
             let connection = match conn.await {
@@ -71,113 +70,68 @@ pub async fn start(
                 }
             };
 
-            // Open up biredirectional stream to send and receive data
-            let (mut client_writer, mut client_reader) = match connection.accept_bi().await {
-                Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
-                    info!("connection closed");
-                    return;
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to open bidirectional stream from existing socket, {}",
-                        e
+            loop {
+                let (mut client_writer, mut client_reader) = match connection.accept_bi().await {
+                    Ok((tx, rx)) => (tx, rx),
+                    Err(_) => return,
+                };
+
+                tokio::spawn(async move {
+                    // Read proxy request from the client stream
+                    let request = parse(&mut client_reader).await.unwrap().into_request();
+
+                    info!(
+                        "Trojan request parsed: ({} {})",
+                        request.addr_port.ip.to_string(),
+                        request.addr_port.port
                     );
-                    return;
-                }
-                Ok(s) => s,
-            };
 
-            // Read proxy request from the client stream
-            let request = parse(&mut client_reader).await.unwrap().into_request();
+                    // Dispatch connection based on trojan command
+                    match request.command {
+                        Command::Udp => {
+                            let udp_socket = match UdpSocket::bind("0.0.0.0:0").await {
+                                Ok(s) => Arc::from(s),
+                                Err(e) => {
+                                    warn!("Failed to create a local UDP socket: {}", e);
+                                    return;
+                                }
+                            };
 
-            info!(
-                "Trojan request parsed: ({} {})",
-                request.addr_port.ip.to_string(),
-                request.addr_port.port
-            );
+                            tokio::select!(
+                                _ = trojan::packet::copy_client_reader_to_udp_socket(&mut client_reader, &udp_socket) => (),
+                                _ = trojan::packet::copy_udp_socket_to_client_writer(&udp_socket, &mut client_writer, request.addr_port) => ()
+                            );
+                        }
+                        _ => {
+                            // Connect to remote server
+                            let addr: SocketAddr = match request.addr_port.into() {
+                                Ok(addr) => addr,
+                                Err(e) => {
+                                    warn!("Failed to resolve target dns name: {}", e);
+                                    return;
+                                }
+                            };
+                            let outbound_connection = TcpStream::connect(addr).await.unwrap();
 
-            // Dispatch connection based on trojan command
-            match request.command {
-                Command::Udp => {
-                    let udp_socket = match UdpSocket::bind("0.0.0.0:0").await {
-                        Ok(s) => Arc::from(s),
-                        Err(e) => {
-                            warn!("Failed to create a local UDP socket: {}", e);
-                            return;
+                            info!("Established connection");
+
+                            // Transport data between client and remote server
+                            let (mut server_reader, mut server_writer) =
+                                tokio::io::split(outbound_connection);
+
+                            tokio::select!(
+                                _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
+                                _ = tokio::io::copy(&mut server_reader, &mut client_writer) => ()
+                            );
                         }
                     };
 
-                    tokio::select!(
-                        _ = trojan::packet::copy_client_reader_to_udp_socket(client_reader, &udp_socket) => (),
-                        _ = trojan::packet::copy_udp_socket_to_client_writer(&udp_socket, client_writer, request.addr_port) => ()
-                    );
-                   
-                    return;
-                }
-                _ => {
-                    // Connect to remote server
-                    let addr: SocketAddr = match request.addr_port.into() {
-                        Ok(addr) => addr,
-                        Err(e) => {
-                            warn!("Failed to resolve target dns name: {}", e);
-                            return;
-                        }
-                    };
-                    let outbound_connection = TcpStream::connect(addr).await.unwrap();
-
-                    info!("Established connection");
-
-                    // Transport data between client and remote server
-                    let (mut server_reader, mut server_writer) =
-                        tokio::io::split(outbound_connection);
-
-                    tokio::select!(
-                        _ = tokio::io::copy(&mut client_reader, &mut server_writer) => (),
-                        _ = tokio::io::copy(&mut server_reader, &mut client_writer) => ()
-                    );
-
+                    // Try to gracefully shutdown, nothing we can do if it fails.
                     _ = client_writer.finish().await;
-                } 
-            };
+                });
+            }
         });
     }
 
     Ok(())
-}
-
-async fn copy_udp_to_client_writer(socket: Arc<UdpSocket>, mut client_writer: SendStream) {
-    let mut buf = vec![0u8; 4096];
-
-    loop {
-        let size = match socket.recv(&mut buf).await {
-            Ok(n) if n == 0 => return,
-            Ok(n) => n,
-            Err(_) => return,
-        };
-
-        if let Err(_e) = client_writer.write_all(&buf[..size]).await {
-            return;
-        }
-    }
-}
-
-async fn copy_client_reader_to_udp(mut client_reader: RecvStream, socket: Arc<UdpSocket>) {
-    let mut buf = vec![0u8; 4096];
-
-    loop {
-        let size = match client_reader.read(&mut buf).await {
-            Ok(o) => {
-                if o.is_none() {
-                    return;
-                }
-
-                o.unwrap()
-            }
-            Err(_) => return,
-        };
-
-        if let Err(_e) = socket.send(&buf[..size]).await {
-            return;
-        }
-    }
 }
