@@ -51,7 +51,11 @@ pub async fn start(
     tls_config.alpn_protocols = ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
 
     // Build server tls configuration
-    let config = quinn::ServerConfig::with_crypto(Arc::new(tls_config));
+    let mut config = quinn::ServerConfig::with_crypto(Arc::new(tls_config));
+    let mut transport_config = quinn::TransportConfig::default();
+    transport_config
+        .congestion_controller_factory(Arc::new(quinn::congestion::BbrConfig::default()));
+    config.transport = Arc::new(transport_config);
 
     // Create QUIC server socket
     let endpoint = Endpoint::server(config, address)?;
