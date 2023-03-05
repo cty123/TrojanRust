@@ -23,9 +23,10 @@ lazy_static! {
                 .required(false)
         )
         .get_matches();
-    static ref CONFIG_PATH: &'static str = ARGS
-        .get_one::<&'static str>("config")
-        .unwrap_or(&"./config/config.json");
+    static ref CONFIG_PATH: String = ARGS
+        .get_one::<String>("config")
+        .unwrap_or(&"./config/config.json".to_string())
+        .to_string();
     static ref CONFIG: (InboundConfig, OutboundConfig) = {
         let config = read_config(&CONFIG_PATH).expect("Error parsing the config file");
         (config.inbound, config.outbound)
