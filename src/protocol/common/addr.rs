@@ -43,7 +43,16 @@ impl Into<std::io::Result<SocketAddr>> for IpAddrPort {
         match self.ip {
             IpAddress::IpAddr(addr) => Ok(SocketAddr::new(addr, self.port)),
             IpAddress::Domain(domain) => {
-                let name = std::str::from_utf8(&domain.inner).unwrap_or("127.0.0.1");
+                let name = match std::str::from_utf8(&domain.inner) {
+                    Ok(name) => name,
+                    Err(_) => {
+                        return Err(Error::new(
+                            ErrorKind::InvalidData,
+                            "request domain name contains non-utf8 character",
+                        ))
+                    }
+                };
+
                 // to_socket_addrs function implicitly runs a DNS query to resolve the DomainName
                 let addrs = match (name, self.port).to_socket_addrs() {
                     Ok(a) => a,

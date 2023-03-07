@@ -42,7 +42,7 @@ pub async fn parse<T: AsyncRead + AsyncWrite + Unpin>(mut stream: T) -> Result<R
         Atype::DomainName => {
             // Read address size
             let size = stream.read_u8().await? as usize;
-            let mut buf = Vec::with_capacity(size);
+            let mut buf = vec![0u8; size];
 
             // Read address data
             stream.read_exact(&mut buf).await?;

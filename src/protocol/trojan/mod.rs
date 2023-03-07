@@ -52,6 +52,7 @@ pub async fn handshake<T: AsyncWrite + Unpin>(
             stream.write_all(&ipv6.octets()).await?;
         }
         IpAddress::Domain(domain) => {
+            stream.write_u8(domain.as_bytes().len() as u8).await?;
             stream.write_all(&domain.as_bytes()).await?;
         }
     }
