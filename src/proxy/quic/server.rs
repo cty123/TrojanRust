@@ -3,18 +3,24 @@ use crate::{
     config::{base::OutboundConfig, tls::make_server_config},
     protocol::{
         common::command::Command,
-        trojan::{self, parse},
+        trojan::{self, parse_and_authenticate},
     },
+    proxy::base::SupportedProtocols,
 };
 
 use log::{info, warn};
+use once_cell::sync::OnceCell;
 use quinn::{self, Endpoint};
+use sha2::{Digest, Sha224};
 use std::{io::Result, net::SocketAddr, sync::Arc};
 use std::{
     io::{Error, ErrorKind},
     net::ToSocketAddrs,
 };
 use tokio::net::{TcpStream, UdpSocket};
+
+// Static placeholder for trojan secret
+static TROJAN_SECRET: OnceCell<Vec<u8>> = OnceCell::new();
 
 pub const ALPN_QUIC_HTTP: &[&[u8]] = &[b"hq-29", b"h2", b"h3"];
 
@@ -29,6 +35,21 @@ pub async fn start(
         .unwrap()
         .next()
         .unwrap();
+
+    // Compute trojan secret
+    let hex = match inbound_config.protocol {
+        SupportedProtocols::TROJAN if inbound_config.secret.is_some() => {
+            let secret = inbound_config.secret.as_ref().unwrap();
+            Sha224::digest(secret.as_bytes())
+                .iter()
+                .map(|x| format!("{:02x}", x))
+                .collect::<String>()
+                .as_bytes()
+                .to_vec()
+        }
+        _ => Vec::new()
+    };
+    _ = TROJAN_SECRET.set(hex);
 
     // Build config for accepting QUIC connection
     let mut tls_config = match &inbound_config.tls {
@@ -82,7 +103,11 @@ pub async fn start(
 
                 tokio::spawn(async move {
                     // Read proxy request from the client stream
-                    let request = parse(&mut client_reader).await.unwrap().into_request();
+                    let request =
+                        parse_and_authenticate(&mut client_reader, TROJAN_SECRET.get().unwrap())
+                            .await
+                            .unwrap()
+                            .into_request();
 
                     info!(
                         "Trojan request parsed: ({} {})",

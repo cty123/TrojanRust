@@ -24,6 +24,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::Status;
 
+/// A list of ALPN that the client should support.
+pub const ALPN_QUIC_HTTP: &[&[u8]] = &[b"hq-29", b"h2", b"h3"];
+
 /// Static life time TCP server outbound traffic handler to avoid ARC
 /// The handler is initialized through init() function
 static TCP_HANDLER: OnceCell<TcpHandler> = OnceCell::new();
@@ -203,10 +206,11 @@ impl TcpHandler {
     ) -> io::Result<()> {
         // Dial remote proxy server
         let _roots = rustls::RootCertStore::empty();
-        let client_crypto = rustls::ClientConfig::builder()
+        let mut client_crypto = rustls::ClientConfig::builder()
             .with_safe_defaults()
             .with_custom_certificate_verifier(Arc::new(NoCertificateVerification {}))
             .with_no_client_auth();
+        client_crypto.alpn_protocols = ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
 
         // Create client
         let mut endpoint = match Endpoint::client(SocketAddr::V6(SocketAddrV6::new(

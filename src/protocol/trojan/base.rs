@@ -4,8 +4,6 @@ use crate::protocol::common::command::Command;
 use crate::protocol::common::request::{InboundRequest, TransportProtocol};
 use crate::proxy::base::SupportedProtocols;
 
-use constant_time_eq::constant_time_eq;
-
 use std::fmt;
 
 /// Trojan hex payload is always 56 bytes
@@ -15,7 +13,6 @@ pub const HEX_SIZE: usize = 56;
 pub const CRLF: u16 = 0x0D0A;
 
 pub struct Request {
-    hex: Vec<u8>,
     command: Command,
     atype: Atype,
     addr: IpAddress,
@@ -25,7 +22,6 @@ pub struct Request {
 
 impl Request {
     pub fn new(
-        hex: Vec<u8>,
         command: Command,
         atype: Atype,
         addr: IpAddress,
@@ -33,7 +29,6 @@ impl Request {
         proxy_protocol: SupportedProtocols,
     ) -> Request {
         return Request {
-            hex,
             command,
             atype,
             addr,
@@ -62,11 +57,6 @@ impl Request {
                 self.proxy_protocol,
             ),
         };
-    }
-
-    #[inline]
-    pub fn validate(&self, secret: &[u8]) -> bool {
-        return constant_time_eq(secret, &self.hex);
     }
 }
 

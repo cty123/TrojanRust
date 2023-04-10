@@ -55,15 +55,7 @@ impl GrpcAcceptor {
         let request = match self.protocol {
             SupportedProtocols::TROJAN => {
                 // Read trojan request from the inbound stream
-                let trojan_request = trojan::parse(&mut inbound_reader).await?;
-
-                // Validate trojan request before dispatching
-                if !trojan_request.validate(&self.secret) {
-                    return Err(Error::new(
-                        ErrorKind::InvalidData,
-                        "Incorrect trojan credentials",
-                    ));
-                }
+                let trojan_request = trojan::parse_and_authenticate(&mut inbound_reader, &self.secret).await?;
 
                 trojan_request.into_request()
             }

@@ -4,14 +4,32 @@ use crate::protocol::common::command::Command;
 use crate::protocol::trojan::base::{Request, HEX_SIZE};
 use crate::protocol::trojan::packet::TrojanUdpPacketHeader;
 
-use bytes::Bytes;
-use std::io::Result;
+use bytes::{Bytes, BytesMut};
+use constant_time_eq::constant_time_eq;
+use std::io::{Error, ErrorKind, Result};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-pub async fn parse<T: AsyncRead + Unpin>(stream: &mut T) -> Result<Request> {
-    // Read hex value for authentication
-    let mut hex = vec![0u8; HEX_SIZE];
-    stream.read_exact(&mut hex).await?;
+pub async fn parse_and_authenticate<T: AsyncRead + Unpin>(
+    stream: &mut T,
+    hex_key: &[u8],
+) -> Result<Request> {
+    // Read hex value for authentication.
+    let mut hex = BytesMut::with_capacity(HEX_SIZE);
+    let n = stream.read_buf(&mut hex).await?;
+    if n != HEX_SIZE {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "Malformed Trojan header",
+        ));
+    }
+
+    // Authentication needs to happen here, otherwise the following read operations are not safe.
+    if !constant_time_eq(hex_key, &hex) {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "Trojan password mismatch",
+        ));
+    }
 
     // Read CLRF
     stream.read_u16().await?;
@@ -50,7 +68,6 @@ pub async fn parse<T: AsyncRead + Unpin>(stream: &mut T) -> Result<Request> {
     stream.read_u16().await?;
 
     Ok(Request::new(
-        hex,
         command,
         atype,
         addr,
